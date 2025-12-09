@@ -90,6 +90,15 @@ client.config.configureEditorPanel([
     defaultValue: '35',
   },
   {
+    name: 'chatsSource',
+    type: 'element',
+  },
+  {
+    name: 'autoIntensity',
+    type: 'text',
+    defaultValue: 'true',
+  },
+  {
     name: 'showLegend',
     type: 'text',
     defaultValue: 'true',
@@ -309,6 +318,7 @@ export function AvailabilityPlugin() {
   // Get the element IDs from config
   const sourceElementId = config.source as string
   const scheduleElementId = config.scheduleSource as string
+  const chatsElementId = config.chatsSource as string
   
   // Get column mappings from Sigma using actual element IDs
   const columns = useElementColumns(sourceElementId)
@@ -317,10 +327,12 @@ export function AvailabilityPlugin() {
   // Get actual data from the connected Sigma worksheets using element IDs
   const sigmaData = useElementData(sourceElementId)
   const scheduleData = useElementData(scheduleElementId)
+  const chatsData = useElementData(chatsElementId)
   
   // State to hold data from direct subscriptions
   const [directScheduleData, setDirectScheduleData] = useState<Record<string, any[]>>({})
   const [directSourceData, setDirectSourceData] = useState<Record<string, any[]>>({})
+  const [directChatsData, setDirectChatsData] = useState<Record<string, any[]>>({})
   
   // Flag to track if effect ran
   const [effectRan, setEffectRan] = useState(false)
@@ -330,6 +342,7 @@ export function AvailabilityPlugin() {
     console.log('⚡ useEffect FIRED!')
     console.log('  scheduleElementId:', scheduleElementId)
     console.log('  sourceElementId:', sourceElementId)
+    console.log('  chatsElementId:', chatsElementId)
     setEffectRan(true)
     
     if (!client?.elements?.subscribeToElementData) {
@@ -337,7 +350,7 @@ export function AvailabilityPlugin() {
       return
     }
     
-    if (!scheduleElementId && !sourceElementId) {
+    if (!scheduleElementId && !sourceElementId && !chatsElementId) {
       console.log('[Sigma Client] No element IDs yet, skipping subscriptions')
       return
     }
@@ -346,6 +359,7 @@ export function AvailabilityPlugin() {
     
     let unsubSchedule: (() => void) | undefined
     let unsubSource: (() => void) | undefined
+    let unsubChats: (() => void) | undefined
     
     if (scheduleElementId) {
       try {
@@ -373,11 +387,25 @@ export function AvailabilityPlugin() {
       }
     }
     
+    if (chatsElementId) {
+      try {
+        console.log('[Sigma Client] Subscribing to chats element:', chatsElementId)
+        unsubChats = client.elements.subscribeToElementData(chatsElementId, (data) => {
+          console.log('[Sigma Client] ✓ Received chats data:', Object.keys(data))
+          setDirectChatsData(data)
+        })
+        console.log('[Sigma Client] ✓ Chats subscription created')
+      } catch (e) {
+        console.error('[Sigma Client] ❌ Error subscribing to chats:', e)
+      }
+    }
+    
     return () => {
       unsubSchedule?.()
       unsubSource?.()
+      unsubChats?.()
     }
-  }, [scheduleElementId, sourceElementId])
+  }, [scheduleElementId, sourceElementId, chatsElementId])
   
   // Log effect status
   console.log('[Effect Status] effectRan:', effectRan)
@@ -427,6 +455,96 @@ export function AvailabilityPlugin() {
   // Parse configuration values
   const apiUrl = config.apiUrl as string
   const defaultIntensity = parseInt(config.defaultIntensity as string) || 35
+  const autoIntensityEnabled = config.autoIntensity !== 'false' // Default to true
+  
+  // Debug: Log configuration
+  console.log('[Auto Intensity] Configuration:', {
+    autoIntensityEnabled,
+    autoIntensityConfig: config.autoIntensity,
+    chatsElementId,
+    defaultIntensity,
+  })
+  
+  // Debug: Log chats data (moved after effectiveChatsData calculation)
+  
+  // Use direct subscription data if available, fall back to hook data
+  const effectiveChatsData = Object.keys(directChatsData).length > 0 ? directChatsData : chatsData
+  
+  // Calculate row count from chats data
+  const chatsRowCount = useMemo(() => {
+    if (!effectiveChatsData) {
+      return 0
+    }
+    
+    const keys = Object.keys(effectiveChatsData)
+    if (keys.length === 0) {
+      return 0
+    }
+    
+    const firstColumnKey = keys[0]
+    return effectiveChatsData[firstColumnKey]?.length || 0
+  }, [effectiveChatsData])
+  
+  // Calculate intensity from chats row count
+  const calculatedIntensity = useMemo(() => {
+    console.log('[Auto Intensity] Calculating intensity...')
+    console.log('[Auto Intensity] autoIntensityEnabled:', autoIntensityEnabled)
+    console.log('[Auto Intensity] effectiveChatsData exists:', !!effectiveChatsData)
+    console.log('[Auto Intensity] effectiveChatsData keys length:', effectiveChatsData ? Object.keys(effectiveChatsData).length : 0)
+    console.log('[Auto Intensity] directChatsData keys:', Object.keys(directChatsData))
+    console.log('[Auto Intensity] chatsData keys:', chatsData ? Object.keys(chatsData) : [])
+    
+    if (!autoIntensityEnabled) {
+      console.log('[Auto Intensity] Auto-intensity is disabled, using defaultIntensity:', defaultIntensity)
+      return defaultIntensity
+    }
+    
+    // If chatsData exists but has no keys, treat it as 0 rows (empty table)
+    // If chatsData doesn't exist at all, use defaultIntensity
+    if (!effectiveChatsData) {
+      console.log('[Auto Intensity] No chats data object available, using defaultIntensity:', defaultIntensity)
+      return defaultIntensity
+    }
+    
+    const keys = Object.keys(effectiveChatsData)
+    console.log('[Auto Intensity] Available column keys:', keys)
+    
+    // If there are no columns, treat as 0 rows
+    if (keys.length === 0) {
+      console.log('[Auto Intensity] No columns found (empty table), setting intensity to 0%')
+      return 0
+    }
+    
+    // Use the pre-calculated row count
+    const rowCount = chatsRowCount
+    
+    console.log('[Auto Intensity] Row count:', rowCount)
+    
+    // Calculate intensity based on thresholds:
+    // 0 rows = 0%
+    // 1 row = 5%
+    // 6 rows = 90%
+    // 7+ rows = 100%
+    let calculatedValue: number
+    if (rowCount === 0) {
+      calculatedValue = 0
+      console.log('[Auto Intensity] Row count is 0, setting intensity to 0%')
+    } else if (rowCount >= 7) {
+      calculatedValue = 100
+      console.log('[Auto Intensity] Row count >= 7, setting intensity to 100%')
+    } else if (rowCount >= 1 && rowCount <= 6) {
+      // Linear interpolation: 5% at 1 row, 90% at 6 rows
+      const intensity = 5 + (rowCount - 1) * ((90 - 5) / (6 - 1))
+      calculatedValue = Math.round(intensity)
+      console.log('[Auto Intensity] Row count is', rowCount, ', calculated intensity:', calculatedValue, '%')
+    } else {
+      calculatedValue = defaultIntensity
+      console.log('[Auto Intensity] Unexpected row count, using defaultIntensity:', defaultIntensity)
+    }
+    
+    console.log('[Auto Intensity] Final calculated intensity:', calculatedValue)
+    return calculatedValue
+  }, [chatsRowCount, autoIntensityEnabled, defaultIntensity])
   const showLegend = config.showLegend === 'true'
   const simulateTime = config.simulateTime === 'true'
 
@@ -815,10 +933,27 @@ export function AvailabilityPlugin() {
     setOooAgents(oooList)
   }, [config, scheduleData, directScheduleData])
 
-  // Initialize intensity from config
+  // Update intensity when calculated intensity changes (if auto-intensity is enabled)
   useEffect(() => {
-    setIntensity(defaultIntensity)
-  }, [defaultIntensity])
+    console.log('[Auto Intensity Effect] Running effect')
+    console.log('[Auto Intensity Effect] autoIntensityEnabled:', autoIntensityEnabled)
+    console.log('[Auto Intensity Effect] calculatedIntensity:', calculatedIntensity)
+    console.log('[Auto Intensity Effect] defaultIntensity:', defaultIntensity)
+    console.log('[Auto Intensity Effect] Current intensity state:', intensity)
+    console.log('[Auto Intensity Effect] Has effectiveChatsData:', !!effectiveChatsData)
+    console.log('[Auto Intensity Effect] effectiveChatsData keys:', effectiveChatsData ? Object.keys(effectiveChatsData) : [])
+    console.log('[Auto Intensity Effect] directChatsData keys:', Object.keys(directChatsData))
+    
+    if (autoIntensityEnabled) {
+      // Always use calculated intensity when auto-intensity is enabled
+      console.log('[Auto Intensity Effect] Auto-intensity enabled, setting intensity to:', calculatedIntensity)
+      setIntensity(calculatedIntensity)
+    } else {
+      // Only use default intensity if auto-intensity is disabled
+      console.log('[Auto Intensity Effect] Auto-intensity disabled, setting intensity to default:', defaultIntensity)
+      setIntensity(defaultIntensity)
+    }
+  }, [calculatedIntensity, autoIntensityEnabled, defaultIntensity, effectiveChatsData, directChatsData])
 
   // Time simulation / real-time updates
   useEffect(() => {
@@ -936,6 +1071,7 @@ export function AvailabilityPlugin() {
           <IntensitySlider
             value={intensity}
             onChange={handleIntensityChange}
+            rowCount={chatsRowCount}
           />
           <Timeline
             cities={cities}

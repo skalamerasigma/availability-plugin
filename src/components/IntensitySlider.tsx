@@ -1,9 +1,10 @@
 interface IntensitySliderProps {
   value: number
   onChange: (value: number) => void
+  rowCount?: number
 }
 
-export function IntensitySlider({ value, onChange }: IntensitySliderProps) {
+export function IntensitySlider({ value, onChange, rowCount = 0 }: IntensitySliderProps) {
   // Calculate the color preview (same logic as in the parent)
   const v = Math.max(0, Math.min(100, value))
   let hue: number
@@ -40,9 +41,12 @@ export function IntensitySlider({ value, onChange }: IntensitySliderProps) {
           />
           <div 
             className="intensity-emoji-thumb"
-            style={{ left: `calc(${thumbPosition}% - 14px)` }}
+            style={{ 
+              left: `calc(${thumbPosition}% - 27px)`,
+              backgroundColor: previewColor
+            }}
           >
-            🔥
+            <span className="intensity-row-count">{rowCount}</span>
           </div>
         </div>
       </div>

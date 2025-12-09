@@ -133,7 +133,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'nikita',
     name: 'Nikita',
-    avatar: placeholder('nikita'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765284091/Untitled_design_11_mbsjbt.svg',
     timezone: 'America/Los_Angeles',
   },
   {
@@ -163,25 +163,25 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'hayden',
     name: 'Hayden',
-    avatar: placeholder('hayden'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765311038/Untitled_design_18_uze5nk.svg',
     timezone: 'America/Los_Angeles',
   },
   {
     id: 'roshini',
     name: 'Roshini',
-    avatar: placeholder('roshini'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765311036/Untitled_design_19_ls5fat.svg',
     timezone: 'America/Los_Angeles',
   },
   {
     id: 'abhijeet',
     name: 'Abhijeet',
-    avatar: placeholder('abhijeet'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765310522/Untitled_design_16_jffaql.svg',
     timezone: 'America/Los_Angeles',
   },
   {
     id: 'ratna',
     name: 'Ratna',
-    avatar: placeholder('ratna'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765311039/Untitled_design_17_lchaky.svg',
     timezone: 'America/Los_Angeles',
   },
 

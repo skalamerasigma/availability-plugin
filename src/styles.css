@@ -249,6 +249,11 @@ body {
   transition: transform 0.15s ease;
 }
 
+/* Only green-ring (available) agents overlap */
+.agent.ring-green + .agent.ring-green {
+  margin-left: -12px;
+}
+
 .agent:hover {
   transform: scale(1.1);
   z-index: 10;
@@ -257,7 +262,7 @@ body {
 /* Status badges */
 .agent .status-badge {
   position: absolute;
-  right: -5px;
+  left: -5px;
   top: -5px;
   width: 26px;
   height: 26px;
@@ -421,6 +426,8 @@ body {
   color: #666;
   padding: 0 3px;
   font-weight: 500;
+  margin-bottom: 7px;
+  transform: translateY(-4px);
 }
 
 .intensity-track-wrapper {
@@ -485,18 +492,35 @@ body {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 24px;
   pointer-events: none;
   user-select: none;
-  transition: left 0.1s ease;
+  transition: left 0.1s ease, background-color 0.2s ease;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.intensity-row-count {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 24px;
+  color: #ffffff;
+  letter-spacing: 0;
   line-height: 1;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .intensity-slider-container:hover .intensity-emoji-thumb {
-  font-size: 28px;
-  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.3));
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+  transform: translateY(-50%) scale(1.05);
+}
+
+.intensity-slider-container:hover .intensity-row-count {
+  font-size: 26px;
 }
 
 .intensity-input::-webkit-slider-runnable-track {
