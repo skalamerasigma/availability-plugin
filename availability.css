@@ -1,0 +1,241 @@
+:root{
+    --timeline-height: 56px;
+    --active-color: hsl(100 60% 40%); /* JS updates this live */
+  }
+  
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    background: #f6f7f9;
+    margin: 0;
+    padding: 24px;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  
+  .app{
+    display: grid;
+    grid-template-columns: 1fr 72px; /* main + sidebar */
+    gap: 20px;
+    max-width: 1300px;
+    margin: 0 auto;
+    align-items: start;
+  }
+  
+  .timeline-container {
+    width: 100%;
+  }
+  
+  .timeline {
+    position: relative;
+    height: var(--timeline-height);
+    background: #e7e7e7;
+    border-radius: 6px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+    transition: height .28s ease;
+  }
+  
+  /* Overlap bands */
+  .overlap-band {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(120,120,120,.08),
+      rgba(120,120,120,.08) 8px,
+      rgba(120,120,120,.02) 8px,
+      rgba(120,120,120,.02) 16px
+    );
+    opacity: .4;
+  }
+  
+  /* Shifts */
+  .progress {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 6px;
+    transition: transform .25s ease, opacity .2s ease, filter .2s ease, box-shadow .2s ease, background-color .2s ease;
+    transform-origin: center;
+    z-index: 1;
+    background: var(--active-color); /* dynamic via slider */
+  }
+  
+  .progress.magnified {
+    transform: scaleY(1.6);
+    opacity: .95;
+    z-index: 3;
+    box-shadow: 0 4px 18px rgba(0,0,0,.12);
+    filter: saturate(1.15) brightness(1.03);
+  }
+  
+  .progress.dim {
+    background: #bbb !important;
+    opacity: .25;
+  }
+  
+  /* Markers */
+  .marker {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: #111;
+    opacity: .5;
+    z-index: 2;
+  }
+  
+  /* Cursor */
+  .cursor {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .cursor-line {
+    width: 2px;
+    height: 100%;
+    background: #ff3b30;
+    margin: 0 auto;
+    box-shadow: 0 0 6px rgba(255,59,48,.6);
+  }
+  .cursor-time {
+    font-size: 12px;
+    background: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+    white-space: nowrap;
+  }
+  .cursor-time.top    { margin-bottom: 4px; }
+  .cursor-time.bottom { margin-top: 4px; }
+  
+  /* Zones */
+  .zones {
+    display: flex;
+    justify-content: space-between;
+    text-align: center;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .zone {
+    flex: 1;
+    transition: transform .25s ease, opacity .2s ease;
+  }
+  .zone h3 {
+    margin-bottom: 12px;
+    transition: transform .25s ease;
+  }
+  .agents {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    transition: transform .25s ease;
+  }
+  .agent {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: url("https://i.pravatar.cc/40") center/cover;
+    border: 2px solid #fff;
+    box-shadow: 0 0 3px rgba(0,0,0,0.25);
+    position: relative;
+  }
+  
+  /* Status badges (SVG) */
+  .agent .status-badge {
+    position: absolute;
+    right: -4px;
+    top: -4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .agent .status-badge svg {
+    width: 12px;
+    height: 12px;
+    display: block;
+  }
+  
+  /* Optional status rings */
+  .agent.status-away    { box-shadow: 0 0 0 3px rgba(128,128,128,.35), 0 0 3px rgba(0,0,0,.25); }
+  .agent.status-call    { box-shadow: 0 0 0 3px rgba(30,144,255,.35),  0 0 3px rgba(0,0,0,.25); }
+  .agent.status-lunch   { box-shadow: 0 0 0 3px rgba(255,193,7,.45),   0 0 3px rgba(0,0,0,.25); }
+  .agent.status-closing { box-shadow: 0 0 0 3px rgba(156,39,176,.40),  0 0 3px rgba(0,0,0,.25); }
+  .agent.status-chat    { box-shadow: 0 0 0 3px rgba(0,200,83,.45),    0 0 3px rgba(0,0,0,.25); }
+  
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    align-items: center;
+    font-size: 13px;
+    color: #333;
+  }
+  .legend .dot {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    margin-right: 6px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.08);
+  }
+  .legend .dot-away    { box-shadow: 0 0 0 2px rgba(128,128,128,.35); }
+  .legend .dot-call    { box-shadow: 0 0 0 2px rgba(30,144,255,.35); }
+  .legend .dot-lunch   { box-shadow: 0 0 0 2px rgba(255,193,7,.5); }
+  .legend .dot-chat    { box-shadow: 0 0 0 2px rgba(0,200,83,.45); }
+  .legend .dot-closing { box-shadow: 0 0 0 2px rgba(156,39,176,.4); }
+  
+  /* Current vs inactive zones */
+  .zone.current { opacity: 1; }
+  .zone.inactive { opacity: 0.5; }
+  
+  /* Sidebar controls */
+  .controls{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .slider-label{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 12px;
+    color: #333;
+    gap: 6px;
+  }
+  .slider-label .labels{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    height: 220px;
+    justify-content: space-between;
+  }
+  .slider-label em{ font-style: normal; color:#666; }
+  
+  /* Vertical range styling */
+  #intensity{
+    writing-mode: bt-lr; /* fallback */
+    -webkit-appearance: slider-vertical;
+    appearance: slider-vertical;
+    width: 24px;
+    height: 240px;
+  }
+  

@@ -1,0 +1,63 @@
+<div class="app">
+    <div class="timeline-container">
+      <div class="timeline">
+        <!-- Overlap bands -->
+        <div class="overlap-band" id="overlap-lon-ny"></div>
+        <div class="overlap-band" id="overlap-ny-sf"></div>
+  
+        <!-- Shift spans -->
+        <div class="progress" id="progress-london"></div>
+        <div class="progress" id="progress-ny"></div>
+        <div class="progress" id="progress-sf"></div>
+  
+        <!-- 5 PM markers -->
+        <div class="marker" id="marker-london" title="London 17:00"></div>
+        <div class="marker" id="marker-ny" title="New York 17:00"></div>
+        <div class="marker" id="marker-sf" title="San Francisco 17:00"></div>
+  
+        <!-- Current time cursor -->
+        <div class="cursor" id="cursor">
+          <div class="cursor-time top" id="incoming-time"></div>
+          <div class="cursor-line"></div>
+          <div class="cursor-time bottom" id="local-time"></div>
+        </div>
+      </div>
+  
+      <div class="zones">
+        <div class="zone">
+          <h3>London</h3>
+          <div class="agents"></div>
+        </div>
+        <div class="zone">
+          <h3>New York</h3>
+          <div class="agents"></div>
+        </div>
+        <div class="zone">
+          <h3>San Francisco</h3>
+          <div class="agents"></div>
+        </div>
+      </div>
+  
+      <div class="legend">
+        <span><i class="dot dot-away">⏳</i> Away</span>
+        <span><i class="dot dot-call">📞</i> On a call</span>
+        <span><i class="dot dot-lunch">🍕</i> Lunch</span>
+        <span><i class="dot dot-chat">💬</i> Chat</span>
+        <span><i class="dot dot-closing">🚪</i> Closing</span>
+      </div>
+    </div>
+  
+    <!-- Intensity control -->
+    <aside class="controls">
+      <label for="intensity" class="slider-label">
+        <span>Intensity</span>
+        <span class="labels">
+          <em>Low</em>
+          <em>Mid</em>
+          <em>High</em>
+        </span>
+      </label>
+      <input id="intensity" type="range" min="0" max="100" value="35" orient="vertical" />
+    </aside>
+  </div>
+  
