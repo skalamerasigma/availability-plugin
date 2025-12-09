@@ -438,8 +438,13 @@ body {
   border: 2px solid rgba(0, 0, 0, 0.08);
 }
 
-.intensity-input {
+.intensity-slider-container {
   flex: 1;
+  position: relative;
+}
+
+.intensity-input {
+  width: 100%;
   height: 8px;
   cursor: pointer;
   -webkit-appearance: none;
@@ -454,67 +459,44 @@ body {
   height: 10px;
 }
 
+/* Hide default thumb - make it transparent but keep it functional */
 .intensity-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 
-    0 2px 8px rgba(0, 0, 0, 0.15),
-    0 0 0 2px rgba(255, 255, 255, 1),
-    0 0 0 4px rgba(0, 0, 0, 0.08);
+  background: transparent;
   cursor: pointer;
   border: none;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.intensity-input::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-  box-shadow: 
-    0 3px 12px rgba(0, 0, 0, 0.2),
-    0 0 0 2px rgba(255, 255, 255, 1),
-    0 0 0 4px rgba(0, 0, 0, 0.1);
-}
-
-.intensity-input::-webkit-slider-thumb:active {
-  transform: scale(1.1);
-  box-shadow: 
-    0 2px 6px rgba(0, 0, 0, 0.2),
-    0 0 0 2px rgba(255, 255, 255, 1),
-    0 0 0 4px rgba(0, 0, 0, 0.12);
 }
 
 .intensity-input::-moz-range-thumb {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 
-    0 2px 8px rgba(0, 0, 0, 0.15),
-    0 0 0 2px rgba(255, 255, 255, 1),
-    0 0 0 4px rgba(0, 0, 0, 0.08);
+  background: transparent;
   cursor: pointer;
   border: none;
-  transition: all 0.2s ease;
 }
 
-.intensity-input::-moz-range-thumb:hover {
-  transform: scale(1.15);
-  box-shadow: 
-    0 3px 12px rgba(0, 0, 0, 0.2),
-    0 0 0 2px rgba(255, 255, 255, 1),
-    0 0 0 4px rgba(0, 0, 0, 0.1);
+/* Custom emoji thumb */
+.intensity-emoji-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 24px;
+  pointer-events: none;
+  user-select: none;
+  transition: left 0.1s ease;
+  z-index: 10;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
-.intensity-input::-moz-range-thumb:active {
-  transform: scale(1.1);
-  box-shadow: 
-    0 2px 6px rgba(0, 0, 0, 0.2),
-    0 0 0 2px rgba(255, 255, 255, 1),
-    0 0 0 4px rgba(0, 0, 0, 0.12);
+.intensity-slider-container:hover .intensity-emoji-thumb {
+  font-size: 28px;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.3));
 }
 
 .intensity-input::-webkit-slider-runnable-track {

@@ -14,6 +14,9 @@ export function IntensitySlider({ value, onChange }: IntensitySliderProps) {
   }
   const previewColor = `hsl(${hue} 70% 45%)`
 
+  // Calculate thumb position as percentage
+  const thumbPosition = ((value - 0) / (100 - 0)) * 100
+
   return (
     <div className="intensity-slider-horizontal">
       <div className="intensity-labels">
@@ -25,15 +28,23 @@ export function IntensitySlider({ value, onChange }: IntensitySliderProps) {
           className="intensity-color-preview" 
           style={{ backgroundColor: previewColor }}
         />
-        <input
-          id="intensity"
-          type="range"
-          min="0"
-          max="100"
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="intensity-input"
-        />
+        <div className="intensity-slider-container">
+          <input
+            id="intensity"
+            type="range"
+            min="0"
+            max="100"
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="intensity-input"
+          />
+          <div 
+            className="intensity-emoji-thumb"
+            style={{ left: `calc(${thumbPosition}% - 14px)` }}
+          >
+            🔥
+          </div>
+        </div>
       </div>
     </div>
   )

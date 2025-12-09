@@ -296,7 +296,7 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 8.3 - Scaled up all UI elements!')
+  console.log('🚀 PLUGIN VERSION: 8.4 - Fire emoji slider thumb!')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
