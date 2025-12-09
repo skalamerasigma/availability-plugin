@@ -296,14 +296,12 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 7.9 - Iframe embedding fixes!')
+  console.log('🚀 PLUGIN VERSION: 8.0 - OOO box hidden!')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
   console.log('[Client Check] client.elements:', typeof client?.elements)
   console.log('[Client Check] client.elements.subscribeToElementData:', typeof client?.elements?.subscribeToElementData)
-  console.log('[Environment] window.location:', window.location.href)
-  console.log('[Environment] window.parent:', window.parent !== window ? 'in iframe' : 'standalone')
   
   // Get configuration from Sigma editor panel
   const config = useConfig()
@@ -981,8 +979,8 @@ export function AvailabilityPlugin() {
             </button>
           </aside>
           
-          {/* OOO Box */}
-          {oooAgents.length > 0 && (
+          {/* OOO Box - Hidden for now */}
+          {false && oooAgents.length > 0 && (
             <aside className="ooo-box">
               <h4>🌴 OOO</h4>
               <div className="ooo-agents">
