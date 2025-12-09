@@ -28,6 +28,19 @@ export function AgentZones({ cities, agentsByCity, currentTime }: AgentZonesProp
         const agents = agentsByCity.get(city.timezone) || []
         const isActive = activeCities.includes(city)
 
+        // Sort agents to group all green-ring agents together
+        const sortedAgents = [...agents].sort((a, b) => {
+          const aIsGreen = a.ringColor === 'green'
+          const bIsGreen = b.ringColor === 'green'
+          
+          // Green agents come first
+          if (aIsGreen && !bIsGreen) return -1
+          if (!aIsGreen && bIsGreen) return 1
+          
+          // Within same group, maintain original order
+          return 0
+        })
+
         return (
           <div
             key={city.code}
@@ -35,9 +48,25 @@ export function AgentZones({ cities, agentsByCity, currentTime }: AgentZonesProp
           >
             <h3>{city.name}</h3>
             <div className="agents">
-              {agents.map((agent) => (
-                <AgentCard key={agent.id} agent={agent} />
-              ))}
+              {sortedAgents.map((agent, index) => {
+                const prevAgent = index > 0 ? sortedAgents[index - 1] : null
+                const isGreen = agent.ringColor === 'green'
+                const prevIsGreen = prevAgent?.ringColor === 'green'
+                
+                // Add spacing when transitioning from green to non-green or vice versa
+                const needsSpacing = prevAgent ? (isGreen !== prevIsGreen) : undefined
+                const isFirstGreen = isGreen && index === 0
+                const isFirstGreenAfterNonGreen = isGreen && prevAgent ? !prevIsGreen : false
+                
+                return (
+                  <AgentCard 
+                    key={agent.id} 
+                    agent={agent}
+                    needsSpacing={needsSpacing}
+                    isFirstInGroup={isFirstGreen || isFirstGreenAfterNonGreen}
+                  />
+                )
+              })}
             </div>
           </div>
         )

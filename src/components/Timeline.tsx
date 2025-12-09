@@ -41,8 +41,11 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
     for (let i = 0; i < cities.length - 1; i++) {
       const current = cities[i]
       const next = cities[i + 1]
+      // Normalize endHours for comparison (handle > 24 case)
+      const currentEnd = current.endHour > 24 ? current.endHour - 24 : current.endHour
+      const nextEnd = next.endHour > 24 ? next.endHour - 24 : next.endHour
       const overlapStart = Math.max(current.startHour, next.startHour)
-      const overlapEnd = Math.min(current.endHour, next.endHour)
+      const overlapEnd = Math.min(currentEnd, nextEnd)
       if (overlapStart < overlapEnd) {
         result.push({ start: overlapStart, end: overlapEnd })
       }
@@ -52,10 +55,20 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
 
   // Determine active cities
   const activeCities = useMemo(() => {
-    return cities.filter(c => {
-      const endHour = Math.min(c.endHour, 24) // Cap at 24
-      return nowUTC >= c.startHour && nowUTC < endHour
+    const active = cities.filter(c => {
+      // Handle endHour > 24 (cities that span midnight)
+      if (c.endHour > 24) {
+        // City spans midnight: active if nowUTC >= startHour OR nowUTC < (endHour - 24)
+        const nextDayEndHour = c.endHour - 24
+        return nowUTC >= c.startHour || nowUTC < nextDayEndHour + 1
+      } else {
+        // Normal case: active if nowUTC is between startHour and endHour
+        // endHour represents the closing hour (e.g., 22 = 6pm EDT = 22:00 UTC)
+        // City is active until the end of that hour (22:59 UTC), so check < endHour + 1
+        return nowUTC >= c.startHour && nowUTC < c.endHour + 1
+      }
     })
+    return active
   }, [cities, nowUTC])
 
   // Check if we're in night mode (no active cities)
@@ -111,12 +124,13 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
 
         {/* Shift progress bars */}
         {cities.map((city, idx) => {
-          // A city is "highlighted" only if it's actually active (not in night mode)
+          // A city is "highlighted" only if it's actually active
           const isActive = activeCities.includes(city)
-          // In night mode (no active cities), don't highlight any bar
           const isHighlighted = isActive
-          const className = `progress ${isHighlighted ? 'magnified' : 'dim'}`
-          const endHour = Math.min(city.endHour, 24) // Cap at 24
+          // Apply night mode class to inactive city bars
+          // For display, cap endHour at 24 (visual representation)
+          const displayEndHour = city.endHour > 24 ? 24 : city.endHour
+          const className = `progress ${isHighlighted ? 'magnified' : 'dim'} ${!isActive ? 'night-mode-bar' : ''}`
           
           return (
             <div
@@ -124,7 +138,7 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
               className={className}
               style={{
                 left: `${hourToPercent(city.startHour)}%`,
-                width: `${hourToPercent(endHour) - hourToPercent(city.startHour)}%`,
+                width: `${hourToPercent(displayEndHour) - hourToPercent(city.startHour)}%`,
               }}
               title={city.name}
             />
@@ -133,13 +147,15 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
 
         {/* End-of-shift markers */}
         {cities.map((city, idx) => {
-          const endHour = Math.min(city.endHour, 24) // Cap at 24
+          // For markers, show the actual end hour (capped at 24 for display)
+          const displayEndHour = city.endHour > 24 ? 24 : city.endHour
+          const localEndHour = city.endHour > 24 ? city.endHour - 24 : city.endHour
           return (
             <div
               key={`marker-${idx}`}
               className="marker"
-              style={{ left: `${hourToPercent(endHour)}%` }}
-              title={`${city.name} ${endHour}:00`}
+              style={{ left: `${hourToPercent(displayEndHour)}%` }}
+              title={`${city.name} ${localEndHour}:00`}
             />
           )
         })}

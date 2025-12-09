@@ -100,6 +100,13 @@ body {
   opacity: 0.35;
 }
 
+/* Night mode styling for inactive city bars */
+.progress.dim.night-mode-bar {
+  background: #d1d5db !important;
+  opacity: 0.65 !important;
+  filter: grayscale(0.6) brightness(0.95);
+}
+
 /* Markers */
 .marker {
   position: absolute;
@@ -157,23 +164,18 @@ body {
 
 /* Night mode - when no office is active */
 .timeline-wrapper.night-mode .timeline {
-  background: linear-gradient(
-    135deg,
-    #1a1a2e 0%,
-    #16213e 50%,
-    #1a1a2e 100%
-  );
+  background: #e5e7eb;
 }
 
 .cursor.night .cursor-line {
-  background: #6366f1;
-  box-shadow: 0 0 8px rgba(99, 102, 241, 0.6);
+  background: #9ca3af;
+  box-shadow: 0 0 8px rgba(156, 163, 175, 0.4);
 }
 
 .cursor.night .cursor-time {
-  background: linear-gradient(135deg, #1e1b4b, #312e81);
-  color: #e0e7ff;
-  border: 1px solid #4338ca;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
 }
 
 /* Night mode indicator badge */
@@ -182,11 +184,12 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(30, 27, 75, 0.9);
-  color: #c7d2fe;
+  background: rgba(243, 244, 246, 0.95);
+  color: #6b7280;
   padding: 10px 20px;
   border-radius: 24px;
   font-size: 14px;
+  border: 1px solid #e5e7eb;
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -249,9 +252,19 @@ body {
   transition: transform 0.15s ease;
 }
 
-/* Only green-ring (available) agents overlap */
-.agent.ring-green + .agent.ring-green {
+/* Spacer for transitions between green and non-green groups */
+.agent-spacer {
+  margin-left: 16px !important;
+}
+
+/* All green-ring agents overlap each other when grouped together */
+.agent.ring-green {
   margin-left: -12px;
+}
+
+/* Reset margin for first green agent in a group */
+.agent-first-in-group {
+  margin-left: 0 !important;
 }
 
 .agent:hover {
