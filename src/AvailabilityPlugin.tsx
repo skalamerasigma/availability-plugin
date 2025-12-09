@@ -296,7 +296,7 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 8.0 - OOO box hidden!')
+  console.log('🚀 PLUGIN VERSION: 8.1 - Horizontal minimal intensity slider!')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
@@ -735,8 +735,8 @@ export function AvailabilityPlugin() {
     }))
   }, [sigmaData, columns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData])
 
-  // OOO agents state - will be populated from schedule data
-  const [oooAgents, setOooAgents] = useState<{ name: string; avatar: string }[]>([])
+  // OOO agents state - will be populated from schedule data (hidden for now)
+  const [_oooAgents, setOooAgents] = useState<{ name: string; avatar: string }[]>([])
 
   // Group agents by city/timezone
   const agentsByCity = useMemo(() => {
@@ -884,11 +884,6 @@ export function AvailabilityPlugin() {
     // client.triggerAction('intensityChanged', { value })
   }, [])
 
-  // Handle clearing all status updates and resetting intensity
-  const handleClear = useCallback(() => {
-    setStatusUpdates({})
-    setIntensity(defaultIntensity)
-  }, [defaultIntensity])
 
   // Show loading state for API
   if (apiUrl && apiLoading) {
@@ -938,16 +933,10 @@ export function AvailabilityPlugin() {
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
       <div className="main-content">
         <div className="timeline-section">
-          <div className="header-controls">
-            <button
-              className="clear-all-button"
-              onClick={handleClear}
-              title="Clear all manual status updates and reset intensity"
-              disabled={Object.keys(statusUpdates).length === 0 && intensity === defaultIntensity}
-            >
-              Clear All
-            </button>
-          </div>
+          <IntensitySlider
+            value={intensity}
+            onChange={handleIntensityChange}
+          />
           <Timeline
             cities={cities}
             currentTime={currentTime}
@@ -961,40 +950,6 @@ export function AvailabilityPlugin() {
           />
 
           {showLegend && <Legend />}
-        </div>
-        
-        <div className="sidebar-controls">
-          <aside className="intensity-control">
-            <IntensitySlider
-              value={intensity}
-              onChange={handleIntensityChange}
-            />
-            <button
-              className="clear-button"
-              onClick={handleClear}
-              title="Clear all manual status updates and reset intensity"
-              disabled={Object.keys(statusUpdates).length === 0 && intensity === defaultIntensity}
-            >
-              Clear
-            </button>
-          </aside>
-          
-          {/* OOO Box - Hidden for now */}
-          {false && oooAgents.length > 0 && (
-            <aside className="ooo-box">
-              <h4>🌴 OOO</h4>
-              <div className="ooo-agents">
-                {oooAgents.map((agent, idx) => (
-                  <div
-                    key={`ooo-${idx}`}
-                    className="ooo-agent"
-                    style={{ backgroundImage: `url("${agent.avatar}")` }}
-                    title={`${agent.name} - Out of Office`}
-                  />
-                ))}
-              </div>
-            </aside>
-          )}
         </div>
       </div>
     </div>
