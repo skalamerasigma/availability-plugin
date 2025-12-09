@@ -121,7 +121,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'hem',
     name: 'Hem',
-    avatar: placeholder('hem'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765318686/Untitled_design_22_uydf2h.svg',
     timezone: 'America/Los_Angeles',
   },
   {
@@ -145,7 +145,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'bhavana',
     name: 'Bhavana',
-    avatar: placeholder('bhavana'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765318568/Untitled_design_21_kuwvcw.svg',
     timezone: 'America/Los_Angeles',
   },
   {
@@ -157,7 +157,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'soheli',
     name: 'Soheli',
-    avatar: placeholder('soheli'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765318474/Untitled_design_20_zsho0q.svg',
     timezone: 'America/Los_Angeles',
   },
   {
