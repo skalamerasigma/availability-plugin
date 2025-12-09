@@ -25,6 +25,7 @@ export function useAgentDataFromApi(apiUrl: string | undefined, refreshInterval 
     }
 
     async function fetchAgents() {
+      if (!apiUrl) return
       try {
         const response = await fetch(apiUrl)
         if (!response.ok) throw new Error(`HTTP ${response.status}`)

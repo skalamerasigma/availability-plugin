@@ -585,7 +585,7 @@ export function AvailabilityPlugin() {
         
         if (tseData) {
           return tseData
-            .map((name, idx) => {
+            .map((name, idx): AgentData | null => {
               if (!name) return null // Skip empty rows
               
               const cleanName = name?.trim()
@@ -663,9 +663,8 @@ export function AvailabilityPlugin() {
               }
               
               // Ensure we always have an emoji
-              if (!statusEmoji) {
-                statusEmoji = getStatusEmoji(status)
-              }
+              const finalStatusEmoji = statusEmoji || getStatusEmoji(status)
+              const finalStatusLabel = statusLabel || 'Unknown'
               
               // Debug: log status assignment for first few agents
               if (idx < 5) {
@@ -674,7 +673,7 @@ export function AvailabilityPlugin() {
                 console.log(`  - isOOO: ${isOOO}`)
                 console.log(`  - tried lookup keys: "${nameLower}", "${firstName}"`)
                 console.log(`  - intercomStatus found: "${intercomStatus || 'none'}"`)
-                console.log(`  - finalStatus: ${status}, emoji: ${statusEmoji}`)
+                console.log(`  - finalStatus: ${status}, emoji: ${finalStatusEmoji}`)
               }
               
               return {
@@ -683,8 +682,8 @@ export function AvailabilityPlugin() {
                 avatar: teamMember?.avatar || `https://i.pravatar.cc/40?u=${cleanName}`,
                 status,
                 timezone: teamMember?.timezone || 'America/New_York',
-                statusEmoji,
-                statusLabel,
+                statusEmoji: finalStatusEmoji,
+                statusLabel: finalStatusLabel,
                 ringColor,
               }
             })
@@ -979,7 +978,7 @@ export function AvailabilityPlugin() {
 }
 
 // Generate agents from real team member data
-function generateDemoAgents(cities: City[]): AgentData[] {
+function generateDemoAgents(_cities: City[]): AgentData[] {
   const statuses: AgentStatus[] = ['away', 'call', 'lunch', 'chat', 'closing']
   
   return TEAM_MEMBERS.map(member => ({
