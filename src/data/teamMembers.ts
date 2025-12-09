@@ -39,7 +39,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'nikhil',
     name: 'Nikhil',
-    avatar: placeholder('nikhil'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765284907/Untitled_design_13_qeyxww.svg',
     timezone: 'America/New_York',
   },
   {
@@ -57,7 +57,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'rashi',
     name: 'Rashi',
-    avatar: placeholder('rashi'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765293772/Untitled_design_14_w3uv23.svg',
     timezone: 'America/New_York',
   },
   {
