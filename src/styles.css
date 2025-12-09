@@ -35,6 +35,45 @@ body {
   min-width: 0;
 }
 
+/* Header controls */
+.header-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.clear-all-button {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #ff3b30;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(255, 59, 48, 0.3);
+}
+
+.clear-all-button:hover:not(:disabled) {
+  background: #ff2d20;
+  box-shadow: 0 3px 6px rgba(255, 59, 48, 0.4);
+  transform: translateY(-1px);
+}
+
+.clear-all-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(255, 59, 48, 0.3);
+}
+
+.clear-all-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #ccc;
+  box-shadow: none;
+}
+
 /* Timeline wrapper - contains cursor outside of clipped timeline */
 .timeline-wrapper {
   position: relative;
@@ -481,6 +520,36 @@ body {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   cursor: pointer;
   border: none;
+}
+
+/* Clear button */
+.clear-button {
+  margin-top: 12px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #666;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-button:hover:not(:disabled) {
+  background: #e8e8e8;
+  border-color: #bbb;
+  color: #333;
+}
+
+.clear-button:active:not(:disabled) {
+  background: #ddd;
+  transform: scale(0.98);
+}
+
+.clear-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Loading state */

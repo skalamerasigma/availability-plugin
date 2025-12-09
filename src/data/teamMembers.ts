@@ -33,7 +33,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'ankita',
     name: 'Ankita',
-    avatar: placeholder('ankita'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765282918/Untitled_design_10_bsgeve.svg',
     timezone: 'America/New_York',
   },
   {

@@ -296,12 +296,14 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 7.8 - City titles moved down!')
+  console.log('🚀 PLUGIN VERSION: 7.9 - Iframe embedding fixes!')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
   console.log('[Client Check] client.elements:', typeof client?.elements)
   console.log('[Client Check] client.elements.subscribeToElementData:', typeof client?.elements?.subscribeToElementData)
+  console.log('[Environment] window.location:', window.location.href)
+  console.log('[Environment] window.parent:', window.parent !== window ? 'in iframe' : 'standalone')
   
   // Get configuration from Sigma editor panel
   const config = useConfig()
@@ -884,6 +886,12 @@ export function AvailabilityPlugin() {
     // client.triggerAction('intensityChanged', { value })
   }, [])
 
+  // Handle clearing all status updates and resetting intensity
+  const handleClear = useCallback(() => {
+    setStatusUpdates({})
+    setIntensity(defaultIntensity)
+  }, [defaultIntensity])
+
   // Show loading state for API
   if (apiUrl && apiLoading) {
     return (
@@ -932,6 +940,16 @@ export function AvailabilityPlugin() {
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
       <div className="main-content">
         <div className="timeline-section">
+          <div className="header-controls">
+            <button
+              className="clear-all-button"
+              onClick={handleClear}
+              title="Clear all manual status updates and reset intensity"
+              disabled={Object.keys(statusUpdates).length === 0 && intensity === defaultIntensity}
+            >
+              Clear All
+            </button>
+          </div>
           <Timeline
             cities={cities}
             currentTime={currentTime}
@@ -953,6 +971,14 @@ export function AvailabilityPlugin() {
               value={intensity}
               onChange={handleIntensityChange}
             />
+            <button
+              className="clear-button"
+              onClick={handleClear}
+              title="Clear all manual status updates and reset intensity"
+              disabled={Object.keys(statusUpdates).length === 0 && intensity === defaultIntensity}
+            >
+              Clear
+            </button>
           </aside>
           
           {/* OOO Box */}
