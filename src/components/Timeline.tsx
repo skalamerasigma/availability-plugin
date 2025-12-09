@@ -52,8 +52,14 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
 
   // Determine active cities
   const activeCities = useMemo(() => {
-    return cities.filter(c => nowUTC >= c.startHour && nowUTC < c.endHour)
+    return cities.filter(c => {
+      const endHour = Math.min(c.endHour, 24) // Cap at 24
+      return nowUTC >= c.startHour && nowUTC < endHour
+    })
   }, [cities, nowUTC])
+
+  // Check if we're in night mode (no active cities)
+  const isNightMode = activeCities.length === 0
 
   // Get incoming and current city for cursor display
   const incomingCity = useMemo(() => {
@@ -71,56 +77,73 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
   }, [activeCities, cities, nowUTC])
 
   return (
-    <div className="timeline">
-      {/* Overlap bands */}
-      {overlaps.map((overlap, idx) => (
-        <div
-          key={`overlap-${idx}`}
-          className="overlap-band"
-          style={{
-            left: `${hourToPercent(overlap.start)}%`,
-            width: `${hourToPercent(overlap.end) - hourToPercent(overlap.start)}%`,
-          }}
-        />
-      ))}
-
-      {/* Shift progress bars */}
-      {cities.map((city, idx) => {
-        const isActive = activeCities.includes(city)
-        return (
-          <div
-            key={`progress-${idx}`}
-            className={`progress ${isActive ? 'magnified' : 'dim'}`}
-            style={{
-              left: `${hourToPercent(city.startHour)}%`,
-              width: `${hourToPercent(city.endHour) - hourToPercent(city.startHour)}%`,
-            }}
-            title={city.name}
-          />
-        )
-      })}
-
-      {/* End-of-shift markers (17:00 / 5 PM) */}
-      {cities.map((city, idx) => (
-        <div
-          key={`marker-${idx}`}
-          className="marker"
-          style={{ left: `${hourToPercent(city.endHour)}%` }}
-          title={`${city.name} ${city.endHour}:00`}
-        />
-      ))}
-
-      {/* Current time cursor */}
-      <div className="cursor" style={{ left: `${hourToPercent(nowUTC)}%` }}>
+    <div className={`timeline-wrapper ${isNightMode ? 'night-mode' : ''}`}>
+      {/* Current time cursor - outside timeline for visibility */}
+      <div className={`cursor ${isNightMode ? 'night' : ''}`} style={{ left: `${hourToPercent(nowUTC)}%` }}>
         <div className="cursor-time top">
-          {incomingCity?.code} {formatTime(currentTime, incomingCity?.timezone || 'UTC')}
+          {isNightMode ? '🌙' : ''} {incomingCity?.code} {formatTime(currentTime, incomingCity?.timezone || 'UTC')}
         </div>
         <div className="cursor-line" />
         <div className="cursor-time bottom">
-          {currentCity?.code} {formatTime(currentTime, currentCity?.timezone || 'UTC')}
+          {currentCity?.code} {formatTime(currentTime, currentCity?.timezone || 'UTC')} {isNightMode ? '💤' : ''}
         </div>
+      </div>
+
+      <div className="timeline">
+        {/* Night mode indicator */}
+        {isNightMode && (
+          <div className="night-indicator">
+            🌙 Off Hours
+          </div>
+        )}
+
+        {/* Overlap bands */}
+        {overlaps.map((overlap, idx) => (
+          <div
+            key={`overlap-${idx}`}
+            className="overlap-band"
+            style={{
+              left: `${hourToPercent(overlap.start)}%`,
+              width: `${hourToPercent(overlap.end) - hourToPercent(overlap.start)}%`,
+            }}
+          />
+        ))}
+
+        {/* Shift progress bars */}
+        {cities.map((city, idx) => {
+          // A city is "highlighted" only if it's actually active (not in night mode)
+          const isActive = activeCities.includes(city)
+          // In night mode (no active cities), don't highlight any bar
+          const isHighlighted = isActive
+          const className = `progress ${isHighlighted ? 'magnified' : 'dim'}`
+          const endHour = Math.min(city.endHour, 24) // Cap at 24
+          
+          return (
+            <div
+              key={`progress-${idx}`}
+              className={className}
+              style={{
+                left: `${hourToPercent(city.startHour)}%`,
+                width: `${hourToPercent(endHour) - hourToPercent(city.startHour)}%`,
+              }}
+              title={city.name}
+            />
+          )
+        })}
+
+        {/* End-of-shift markers */}
+        {cities.map((city, idx) => {
+          const endHour = Math.min(city.endHour, 24) // Cap at 24
+          return (
+            <div
+              key={`marker-${idx}`}
+              className="marker"
+              style={{ left: `${hourToPercent(endHour)}%` }}
+              title={`${city.name} ${endHour}:00`}
+            />
+          )
+        })}
       </div>
     </div>
   )
 }
-

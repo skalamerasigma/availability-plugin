@@ -120,12 +120,12 @@ client.config.configureEditorPanel([
   {
     name: 'city1StartHour',
     type: 'text',
-    defaultValue: '8',
+    defaultValue: '8',  // 9am London (BST/UTC+1) = 8:00 UTC
   },
   {
     name: 'city1EndHour',
     type: 'text',
-    defaultValue: '16',
+    defaultValue: '17', // 6pm London (BST/UTC+1) = 17:00 UTC
   },
   {
     name: 'city2Name',
@@ -145,12 +145,12 @@ client.config.configureEditorPanel([
   {
     name: 'city2StartHour',
     type: 'text',
-    defaultValue: '13',
+    defaultValue: '13', // 9am NYC (EDT/UTC-4) = 13:00 UTC
   },
   {
     name: 'city2EndHour',
     type: 'text',
-    defaultValue: '21',
+    defaultValue: '22', // 6pm NYC (EDT/UTC-4) = 22:00 UTC
   },
   {
     name: 'city3Name',
@@ -170,12 +170,12 @@ client.config.configureEditorPanel([
   {
     name: 'city3StartHour',
     type: 'text',
-    defaultValue: '16',
+    defaultValue: '16', // 9am SF (PDT/UTC-7) = 16:00 UTC
   },
   {
     name: 'city3EndHour',
     type: 'text',
-    defaultValue: '24',
+    defaultValue: '25', // 6pm SF (PDT/UTC-7) = 01:00 UTC next day = 25
   },
 ])
 
@@ -295,57 +295,92 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 }
 
 export function AvailabilityPlugin() {
+  // VERSION CHECK - if you don't see this, you're running cached code!
+  console.log('🚀 PLUGIN VERSION: 7.8 - City titles moved down!')
+  
+  // Debug: Check if client is available
+  console.log('[Client Check] client object:', typeof client)
+  console.log('[Client Check] client.elements:', typeof client?.elements)
+  console.log('[Client Check] client.elements.subscribeToElementData:', typeof client?.elements?.subscribeToElementData)
+  
   // Get configuration from Sigma editor panel
   const config = useConfig()
   
-  // Get column mappings from Sigma
-  const columns = useElementColumns('source')
-  const scheduleColumns = useElementColumns('scheduleSource')
+  // Get the element IDs from config
+  const sourceElementId = config.source as string
+  const scheduleElementId = config.scheduleSource as string
   
-  // Get actual data from the connected Sigma worksheets
-  const sigmaData = useElementData('source')
-  const scheduleData = useElementData('scheduleSource')
+  // Get column mappings from Sigma using actual element IDs
+  const columns = useElementColumns(sourceElementId)
+  const scheduleColumns = useElementColumns(scheduleElementId)
+  
+  // Get actual data from the connected Sigma worksheets using element IDs
+  const sigmaData = useElementData(sourceElementId)
+  const scheduleData = useElementData(scheduleElementId)
   
   // State to hold data from direct subscriptions
   const [directScheduleData, setDirectScheduleData] = useState<Record<string, any[]>>({})
   const [directSourceData, setDirectSourceData] = useState<Record<string, any[]>>({})
   
+  // Flag to track if effect ran
+  const [effectRan, setEffectRan] = useState(false)
+  
   // Subscribe directly to element data using client API
-  // Note: subscribeToElementData expects the CONFIG NAME, not the element ID
   useEffect(() => {
-    console.log('[Sigma Client] Setting up direct subscriptions...')
-    console.log('[Sigma Client] Will subscribe to "scheduleSource" and "source" config names')
+    console.log('⚡ useEffect FIRED!')
+    console.log('  scheduleElementId:', scheduleElementId)
+    console.log('  sourceElementId:', sourceElementId)
+    setEffectRan(true)
+    
+    if (!client?.elements?.subscribeToElementData) {
+      console.error('❌ client.elements.subscribeToElementData is not available!')
+      return
+    }
+    
+    if (!scheduleElementId && !sourceElementId) {
+      console.log('[Sigma Client] No element IDs yet, skipping subscriptions')
+      return
+    }
+    
+    console.log('[Sigma Client] Setting up subscriptions with actual element IDs...')
     
     let unsubSchedule: (() => void) | undefined
     let unsubSource: (() => void) | undefined
     
-    try {
-      console.log('[Sigma Client] Subscribing to scheduleSource...')
-      unsubSchedule = client.elements.subscribeToElementData('scheduleSource', (data) => {
-        console.log('[Sigma Client] ✓ Received schedule data:', data, 'keys:', Object.keys(data))
-        setDirectScheduleData(data)
-      })
-      console.log('[Sigma Client] scheduleSource subscription created')
-    } catch (e) {
-      console.error('[Sigma Client] Error subscribing to scheduleSource:', e)
+    if (scheduleElementId) {
+      try {
+        console.log('[Sigma Client] Subscribing to schedule element:', scheduleElementId)
+        unsubSchedule = client.elements.subscribeToElementData(scheduleElementId, (data) => {
+          console.log('[Sigma Client] ✓ Received schedule data:', Object.keys(data))
+          setDirectScheduleData(data)
+        })
+        console.log('[Sigma Client] ✓ Schedule subscription created')
+      } catch (e) {
+        console.error('[Sigma Client] ❌ Error subscribing to schedule:', e)
+      }
     }
     
-    try {
-      console.log('[Sigma Client] Subscribing to source...')
-      unsubSource = client.elements.subscribeToElementData('source', (data) => {
-        console.log('[Sigma Client] ✓ Received source data:', data, 'keys:', Object.keys(data))
-        setDirectSourceData(data)
-      })
-      console.log('[Sigma Client] source subscription created')
-    } catch (e) {
-      console.error('[Sigma Client] Error subscribing to source:', e)
+    if (sourceElementId) {
+      try {
+        console.log('[Sigma Client] Subscribing to source element:', sourceElementId)
+        unsubSource = client.elements.subscribeToElementData(sourceElementId, (data) => {
+          console.log('[Sigma Client] ✓ Received source data:', Object.keys(data))
+          setDirectSourceData(data)
+        })
+        console.log('[Sigma Client] ✓ Source subscription created')
+      } catch (e) {
+        console.error('[Sigma Client] ❌ Error subscribing to source:', e)
+      }
     }
     
     return () => {
       unsubSchedule?.()
       unsubSource?.()
     }
-  }, []) // Empty deps - only run once on mount
+  }, [scheduleElementId, sourceElementId])
+  
+  // Log effect status
+  console.log('[Effect Status] effectRan:', effectRan)
   
   // Debug: Log ALL available information from Sigma
   console.log('=== SIGMA PLUGIN DEBUG ===')
@@ -372,6 +407,15 @@ export function AvailabilityPlugin() {
   // Also log direct subscription data
   console.log('[Direct] directScheduleData keys:', Object.keys(directScheduleData))
   console.log('[Direct] directSourceData keys:', Object.keys(directSourceData))
+  
+  // Debug OOO values
+  const oooColId = config.scheduleOOO as string
+  if (oooColId && directScheduleData[oooColId]) {
+    const oooValues = directScheduleData[oooColId] as string[]
+    console.log('[OOO Values] Sample:', oooValues?.slice(0, 10))
+    const yesCount = oooValues?.filter(v => v?.toLowerCase() === 'yes').length || 0
+    console.log('[OOO Values] Count with "yes":', yesCount)
+  }
   console.log('===========================')
   
   // Local state
@@ -461,21 +505,19 @@ export function AvailabilityPlugin() {
       const oooCol = scheduleOOOCol
       
       // Find the hour column from the mapped hours
-      // scheduleHours might be a single column ID or an array of column IDs
-      const hourStr = String(currentPacificHour)
+      // scheduleHours is an array of column IDs in order: _0, _1, _2, ... _18
+      // So we just index directly into it based on the current Pacific hour
       let hourCol: string | undefined = undefined
       
-      // If scheduleHours is mapped, look through the available columns for the current hour
       if (scheduleHoursCols) {
         const hourColIds = Array.isArray(scheduleHoursCols) ? scheduleHoursCols : [scheduleHoursCols]
-        // Find which mapped column corresponds to the current hour
-        // The column might be named _16 or just 16 in Sigma
-        hourCol = scheduleColumnKeys.find(k => {
-          // Check if this column name contains the current hour
-          if (k === `_${hourStr}` || k === hourStr) return true
-          if (k.endsWith(`_${hourStr}`) || k.endsWith(`/${hourStr}`)) return true
-          return false
-        })
+        // The array is ordered by hour (0-18), so index directly
+        // Pacific hour 0-18 maps to index 0-18
+        if (currentPacificHour >= 0 && currentPacificHour < hourColIds.length) {
+          hourCol = hourColIds[currentPacificHour]
+        }
+        console.log('[Availability Plugin] scheduleHours array length:', hourColIds.length)
+        console.log('[Availability Plugin] Trying index', currentPacificHour, '-> column ID:', hourCol)
       }
       
       // Debug logging
@@ -500,38 +542,40 @@ export function AvailabilityPlugin() {
       const intercomStatusMap = new Map<string, string>()
       console.log('[Availability Plugin] Checking Intercom status data...')
       console.log('[Availability Plugin] effectiveSourceData keys:', Object.keys(effectiveSourceData || {}))
-      if (effectiveSourceData && Object.keys(effectiveSourceData).length > 0) {
-        const statusColumnKeys = Object.keys(effectiveSourceData)
-        console.log('[Availability Plugin] ✓ Status source connected! Columns:', statusColumnKeys)
+      
+      // Use config column IDs directly (from the Sigma column configuration)
+      const agentNameCol = config.agentName as string
+      const agentStatusCol = config.agentStatus as string
+      
+      console.log('[Availability Plugin] Config columns - agentName:', agentNameCol, 'agentStatus:', agentStatusCol)
+      
+      if (effectiveSourceData && agentNameCol && agentStatusCol) {
+        const names = effectiveSourceData[agentNameCol] as string[] | undefined
+        const statuses = effectiveSourceData[agentStatusCol] as string[] | undefined
         
-        // Handle various column name formats: "First Name", "FIRST_NAME", "first_name"
-        const normalizeCol = (k: string) => k.toUpperCase().replace(/[\s_-]/g, '')
-        const nameCol = statusColumnKeys.find(k => {
-          const norm = normalizeCol(k)
-          return norm.includes('FIRSTNAME') || norm === 'NAME' || norm === 'TSE'
-        })
-        const statusCol = statusColumnKeys.find(k => {
-          const norm = normalizeCol(k)
-          return norm.includes('CURRENTSTATUS') || (norm.includes('STATUS') && !norm.includes('EMOJI'))
-        })
-        // Also find the dedicated emoji column
-        const emojiCol = statusColumnKeys.find(k => {
-          const norm = normalizeCol(k)
-          return norm.includes('STATUSEMOJI') && !norm.includes('(1)')
-        })
-        console.log('[Availability Plugin] Found name col:', nameCol, 'status col:', statusCol, 'emoji col:', emojiCol)
+        console.log('[Availability Plugin] ✓ Status source connected!')
+        console.log('[Availability Plugin] Name data sample:', names?.slice(0, 3))
+        console.log('[Availability Plugin] Status data sample:', statuses?.slice(0, 3))
         
-        if (nameCol && statusCol) {
-          const names = effectiveSourceData[nameCol] as string[] | undefined
-          const statuses = effectiveSourceData[statusCol] as string[] | undefined
-          if (names && statuses) {
-            names.forEach((name, idx) => {
-              if (name) {
-                intercomStatusMap.set(name.trim().toLowerCase(), statuses[idx])
+        if (names && statuses) {
+          names.forEach((name, idx) => {
+            if (name && statuses[idx]) {
+              const cleanName = name.trim().toLowerCase()
+              intercomStatusMap.set(cleanName, statuses[idx])
+              // Also try first name only for matching
+              const firstName = cleanName.split(' ')[0]
+              if (firstName !== cleanName) {
+                intercomStatusMap.set(firstName, statuses[idx])
               }
-            })
-          }
+            }
+          })
+          console.log('[Availability Plugin] Built intercomStatusMap with', intercomStatusMap.size, 'entries')
+          // Log a few entries for debugging
+          const entries = Array.from(intercomStatusMap.entries()).slice(0, 5)
+          console.log('[Availability Plugin] Sample intercom statuses:', entries)
         }
+      } else {
+        console.log('[Availability Plugin] ⚠️ Missing agentName or agentStatus column config')
       }
       
       if (tseCol && effectiveScheduleData[tseCol]) {
@@ -546,10 +590,10 @@ export function AvailabilityPlugin() {
               
               const cleanName = name?.trim()
               const isOOO = oooData?.[idx]?.toLowerCase() === 'yes'
-              const hourBlock = hourData?.[idx] || 'Y' // Default to 'Y' (on chat) if no hour data
+              const hourBlock = hourData?.[idx] || '' // Default to empty if no hour data
               
-              // Skip if not working this hour (X) and not OOO
-              // Actually, let's show everyone but mark them appropriately
+              // Only show TSEs who have "Y" in their hourly chat block
+              if (hourBlock?.toUpperCase() !== 'Y') return null
               
               // Look up team member by name to get avatar and timezone
               const teamMember = TEAM_MEMBERS.find(
@@ -558,33 +602,64 @@ export function AvailabilityPlugin() {
               
               if (!teamMember) return null // Skip if not in our team list
               
-              // Determine status: Use Intercom status if available, otherwise fall back to schedule
+              // Determine status: Intercom status takes priority (real-time), then OOO, then schedule
               let status: AgentStatus
               let statusEmoji: string
               let statusLabel: string
-              const intercomStatus = intercomStatusMap.get(cleanName.toLowerCase())
+              let ringColor: 'red' | 'yellow' | 'green' | 'blue' = 'blue' // Default to blue
               
-              if (isOOO) {
-                status = 'away'
-                statusEmoji = '🌴'
-                statusLabel = 'Out of office'
-              } else if (hourBlock === 'X') {
-                status = 'away'
-                statusEmoji = '🏡'
-                statusLabel = 'Not working'
-              } else if (intercomStatus) {
-                // Use real-time Intercom status with actual emoji
+              // Try multiple ways to match the name in intercom data
+              const nameLower = cleanName.toLowerCase()
+              const firstName = nameLower.split(' ')[0]
+              const intercomStatus = intercomStatusMap.get(nameLower) || 
+                                    intercomStatusMap.get(firstName) ||
+                                    // Also try without middle names
+                                    intercomStatusMap.get(nameLower.replace(/\s+\w+$/, ''))
+              
+              // Determine ring color based on schedule + Intercom status
+              const scheduledForChat = hourBlock?.toUpperCase() === 'Y'
+              if (scheduledForChat && intercomStatus) {
+                const intercomLower = intercomStatus.toLowerCase()
+                if (intercomLower.includes('off chat')) {
+                  ringColor = 'red' // Should be chatting but is off chat
+                } else if (intercomLower.includes('break')) {
+                  ringColor = 'yellow' // Should be chatting but is on break
+                } else if (intercomLower.includes('available')) {
+                  ringColor = 'green' // Scheduled and available - good!
+                }
+                // Otherwise stays blue (default)
+              } else if (scheduledForChat && !intercomStatus) {
+                // Scheduled for chat but no Intercom status - assume available based on schedule
+                ringColor = 'green'
+              }
+              // All other cases stay blue (default)
+              
+              // Priority 1: Use real-time Intercom status if available
+              if (intercomStatus) {
                 status = parseStatus(intercomStatus)
                 statusEmoji = extractEmoji(intercomStatus) || getStatusEmoji(status)
                 statusLabel = intercomStatus
-              } else {
+              }
+              // Priority 2: Check if OOO in schedule
+              else if (isOOO) {
+                status = 'away'
+                statusEmoji = '🌴'
+                statusLabel = 'Out of office'
+              }
+              // Priority 3: Check schedule block
+              else if (hourBlock?.toUpperCase() === 'X') {
+                status = 'away'
+                statusEmoji = '🏡'
+                statusLabel = 'Done for day'  // Changed from "Not working" to match legend
+              }
+              else {
                 // Fall back to schedule block
                 status = parseScheduleBlock(hourBlock, false)
                 statusEmoji = getScheduleEmoji(hourBlock, false)
-                statusLabel = hourBlock === 'Y' ? 'On Chat' : 
+                statusLabel = hourBlock === 'Y' ? 'Available' : 
                              hourBlock === 'N' ? 'Off Chat' :
                              hourBlock === 'F' ? 'Focus Time' :
-                             hourBlock === 'L' ? 'Lunch' : 'Away'
+                             hourBlock === 'L' ? 'On a break' : 'Done for day'
               }
               
               // Ensure we always have an emoji
@@ -593,8 +668,13 @@ export function AvailabilityPlugin() {
               }
               
               // Debug: log status assignment for first few agents
-              if (idx < 3) {
-                console.log(`[Availability Plugin] Agent ${cleanName}: block=${hourBlock}, isOOO=${isOOO}, intercom=${intercomStatus || 'none'}, finalStatus=${status}, emoji=${statusEmoji}`)
+              if (idx < 5) {
+                console.log(`[Availability Plugin] Agent ${cleanName}:`)
+                console.log(`  - hourBlock from schedule: "${hourBlock}"`)
+                console.log(`  - isOOO: ${isOOO}`)
+                console.log(`  - tried lookup keys: "${nameLower}", "${firstName}"`)
+                console.log(`  - intercomStatus found: "${intercomStatus || 'none'}"`)
+                console.log(`  - finalStatus: ${status}, emoji: ${statusEmoji}`)
               }
               
               return {
@@ -605,6 +685,7 @@ export function AvailabilityPlugin() {
                 timezone: teamMember?.timezone || 'America/New_York',
                 statusEmoji,
                 statusLabel,
+                ringColor,
               }
             })
             .filter((agent): agent is AgentData => agent !== null)
@@ -655,6 +736,9 @@ export function AvailabilityPlugin() {
     }))
   }, [sigmaData, columns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData])
 
+  // OOO agents state - will be populated from schedule data
+  const [oooAgents, setOooAgents] = useState<{ name: string; avatar: string }[]>([])
+
   // Group agents by city/timezone
   const agentsByCity = useMemo(() => {
     const grouped = new Map<string, AgentData[]>()
@@ -682,6 +766,55 @@ export function AvailabilityPlugin() {
 
     return grouped
   }, [agents, cities])
+
+  // Extract OOO agents when schedule data is available
+  useEffect(() => {
+    const scheduleTSECol = config.scheduleTSE as string
+    const scheduleOOOCol = config.scheduleOOO as string
+    const effectiveScheduleData = Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData
+    
+    console.log('[OOO Effect] Checking for OOO data...')
+    console.log('[OOO Effect] effectiveScheduleData keys:', Object.keys(effectiveScheduleData || {}).length)
+    
+    if (!effectiveScheduleData || !scheduleTSECol || !scheduleOOOCol) {
+      return
+    }
+    
+    const tseData = effectiveScheduleData[scheduleTSECol] as string[] | undefined
+    const oooData = effectiveScheduleData[scheduleOOOCol] as string[] | undefined
+    
+    if (!tseData || !oooData) {
+      console.log('[OOO Effect] Missing tseData or oooData')
+      return
+    }
+    
+    console.log('[OOO Effect] Found data! TSE count:', tseData.length)
+    console.log('[OOO Effect] OOO data sample:', oooData.slice(0, 5))
+    
+    const oooList: { name: string; avatar: string }[] = []
+    
+    tseData.forEach((name, idx) => {
+      if (!name) return
+      const cleanName = name.trim()
+      const oooValue = oooData[idx]
+      const isOOO = oooValue?.toLowerCase() === 'yes'
+      
+      if (isOOO) {
+        const teamMember = TEAM_MEMBERS.find(
+          m => m.name.toLowerCase() === cleanName.toLowerCase()
+        )
+        if (teamMember) {
+          oooList.push({
+            name: cleanName,
+            avatar: teamMember.avatar || `https://i.pravatar.cc/40?u=${cleanName}`,
+          })
+        }
+      }
+    })
+    
+    console.log('[OOO Effect] Found OOO agents:', oooList.length, oooList.map(a => a.name))
+    setOooAgents(oooList)
+  }, [config, scheduleData, directScheduleData])
 
   // Initialize intensity from config
   useEffect(() => {
@@ -798,28 +931,49 @@ export function AvailabilityPlugin() {
 
   return (
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
-      <div className="timeline-container">
-        <Timeline
-          cities={cities}
-          currentTime={currentTime}
-          simulateTime={simulateTime}
-        />
+      <div className="main-content">
+        <div className="timeline-section">
+          <Timeline
+            cities={cities}
+            currentTime={currentTime}
+            simulateTime={simulateTime}
+          />
 
-        <AgentZones
-          cities={cities}
-          agentsByCity={agentsByCity}
-          currentTime={currentTime}
-        />
+          <AgentZones
+            cities={cities}
+            agentsByCity={agentsByCity}
+            currentTime={currentTime}
+          />
 
-        {showLegend && <Legend />}
+          {showLegend && <Legend />}
+        </div>
+        
+        <div className="sidebar-controls">
+          <aside className="intensity-control">
+            <IntensitySlider
+              value={intensity}
+              onChange={handleIntensityChange}
+            />
+          </aside>
+          
+          {/* OOO Box */}
+          {oooAgents.length > 0 && (
+            <aside className="ooo-box">
+              <h4>🌴 OOO</h4>
+              <div className="ooo-agents">
+                {oooAgents.map((agent, idx) => (
+                  <div
+                    key={`ooo-${idx}`}
+                    className="ooo-agent"
+                    style={{ backgroundImage: `url("${agent.avatar}")` }}
+                    title={`${agent.name} - Out of Office`}
+                  />
+                ))}
+              </div>
+            </aside>
+          )}
+        </div>
       </div>
-
-      <aside className="controls">
-        <IntensitySlider
-          value={intensity}
-          onChange={handleIntensityChange}
-        />
-      </aside>
     </div>
   )
 }

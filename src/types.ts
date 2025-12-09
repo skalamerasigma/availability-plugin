@@ -17,6 +17,7 @@ export interface AgentData {
   timezone: string
   statusEmoji?: string // Actual emoji from Intercom (🟢, ☕, 🚫, etc.)
   statusLabel?: string // Full status text from Intercom
+  ringColor?: 'red' | 'yellow' | 'green' | 'blue' // Ring color: red = off chat when scheduled, yellow = on break when scheduled, green = available when scheduled, blue = default
 }
 
 export interface Overlap {

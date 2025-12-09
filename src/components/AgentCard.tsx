@@ -18,12 +18,19 @@ export function AgentCard({ agent }: AgentCardProps) {
   // Use the actual Intercom emoji if available
   const displayEmoji = agent.statusEmoji
   const displayLabel = agent.statusLabel || statusConfig.label
+  
+  // Build className with ring color
+  const ringClass = agent.ringColor ? `ring-${agent.ringColor}` : 'ring-blue'
+  const classNames = ['agent', ringClass].join(' ')
+  
+  // Add warning indicator for red/yellow rings
+  const isWarning = agent.ringColor === 'red' || agent.ringColor === 'yellow'
 
   return (
     <div
-      className={`agent status-${agent.status}`}
+      className={classNames}
       style={{ backgroundImage: `url("${agent.avatar}")` }}
-      title={`${agent.name} - ${displayLabel}`}
+      title={`${agent.name} - ${displayLabel}${isWarning ? ' ⚠️ Scheduled for chat' : ''}`}
     >
       <div
         className="status-badge emoji-badge"
