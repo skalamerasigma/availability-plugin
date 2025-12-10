@@ -419,6 +419,8 @@ export function AvailabilityPlugin() {
   console.log('[Columns] scheduleSource columns:', scheduleColumns)
   console.log('[Data] sigmaData:', sigmaData, 'keys:', Object.keys(sigmaData || {}))
   console.log('[Data] scheduleData:', scheduleData, 'keys:', Object.keys(scheduleData || {}))
+  console.log('[Data] chatsData:', chatsData, 'keys:', Object.keys(chatsData || {}))
+  console.log('[Data] directChatsData:', directChatsData, 'keys:', Object.keys(directChatsData || {}))
   
   // Try accessing data by column ID directly
   const scheduleTSEId = config.scheduleTSE as string
@@ -472,17 +474,26 @@ export function AvailabilityPlugin() {
   
   // Calculate row count from chats data
   const chatsRowCount = useMemo(() => {
+    console.log('[Chats Row Count] Calculating...')
+    console.log('[Chats Row Count] effectiveChatsData present:', !!effectiveChatsData)
+    
     if (!effectiveChatsData) {
+      console.log('[Chats Row Count] No data, returning 0')
       return 0
     }
     
     const keys = Object.keys(effectiveChatsData)
+    console.log('[Chats Row Count] Keys found:', keys)
+    
     if (keys.length === 0) {
+      console.log('[Chats Row Count] No keys, returning 0')
       return 0
     }
     
     const firstColumnKey = keys[0]
-    return effectiveChatsData[firstColumnKey]?.length || 0
+    const count = effectiveChatsData[firstColumnKey]?.length || 0
+    console.log('[Chats Row Count] First column:', firstColumnKey, 'Length:', count)
+    return count
   }, [effectiveChatsData])
   
   // Calculate intensity from chats row count
