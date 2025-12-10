@@ -131,17 +131,11 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
           // For display, cap endHour at 24 (visual representation)
           const displayEndHour = city.endHour > 24 ? 24 : city.endHour
           const isSF = city.name === 'San Francisco' || city.code === 'SFO' || city.code === 'SF'
-          const className = `progress ${isHighlighted ? 'magnified' : 'dim'} ${!isActive && !isSF ? 'night-mode-bar' : ''}`
+          const className = `progress ${isHighlighted ? 'magnified' : 'dim'} ${!isActive && !isSF ? 'night-mode-bar' : ''} ${isSF ? 'sf-bar' : ''}`
           
-          // SF bars should always use the active color, even when inactive
-          const style: { left: string; width: string; backgroundColor?: string } = {
+          const style: { left: string; width: string } = {
             left: `${hourToPercent(city.startHour)}%`,
             width: `${hourToPercent(displayEndHour) - hourToPercent(city.startHour)}%`,
-          }
-          
-          // Apply active color to inactive SF bars
-          if (isSF && !isActive) {
-            style.backgroundColor = 'var(--active-color)'
           }
           
           return (
