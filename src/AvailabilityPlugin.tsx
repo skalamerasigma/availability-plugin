@@ -94,6 +94,12 @@ client.config.configureEditorPanel([
     type: 'element',
   },
   {
+    name: 'chatsTriggerColumn',
+    type: 'column',
+    source: 'chatsSource',
+    allowMultiple: false,
+  },
+  {
     name: 'autoIntensity',
     type: 'text',
     defaultValue: 'true',
