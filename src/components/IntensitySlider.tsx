@@ -21,10 +21,6 @@ export function IntensitySlider({ value, onChange, rowCount = 0, readOnly = fals
 
   return (
     <div className="intensity-slider-horizontal">
-      <div className="intensity-labels">
-        <span>Low</span>
-        <span>High</span>
-      </div>
       <div className="intensity-track-wrapper">
         <div 
           className="intensity-color-preview" 
