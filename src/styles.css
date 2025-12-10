@@ -101,15 +101,32 @@ body {
 }
 
 /* Night mode styling for inactive city bars */
+/* This applies to inactive cities (not SF) to show they're in off-hours */
+/* Night mode bars should be visually distinct - darker/muted compared to regular inactive bars */
+.progress.night-mode-bar {
+  background: #9ca3af !important;
+  opacity: 0.7 !important;
+  filter: grayscale(0.8) brightness(0.85) !important;
+}
+
 .progress.dim.night-mode-bar {
-  background: #d1d5db !important;
-  opacity: 0.65 !important;
-  filter: grayscale(0.6) brightness(0.95);
+  background: #9ca3af !important;
+  opacity: 0.7 !important;
+  filter: grayscale(0.8) brightness(0.85) !important;
 }
 
 /* SF bars should always be colored, even when inactive */
+/* This must come after night-mode-bar to ensure SF bars override night mode */
 .progress.sf-bar {
   background: var(--active-color) !important;
+  opacity: 0.35 !important; /* Match dim opacity when inactive */
+}
+
+/* Ensure SF bars maintain color even when dim */
+.progress.dim.sf-bar {
+  background: var(--active-color) !important;
+  opacity: 0.35 !important;
+  filter: none !important; /* Remove grayscale filter */
 }
 
 /* Markers */
