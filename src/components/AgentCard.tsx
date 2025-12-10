@@ -2,6 +2,8 @@ import type { AgentData, AgentStatus } from '../types'
 
 interface AgentCardProps {
   agent: AgentData
+  needsSpacing?: boolean
+  isFirstInGroup?: boolean
 }
 
 const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string }> = {
@@ -12,7 +14,7 @@ const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string }> = {
   closing: { label: 'Closing', color: '#9c27b0' },
 }
 
-export function AgentCard({ agent }: AgentCardProps) {
+export function AgentCard({ agent, needsSpacing = false, isFirstInGroup = false }: AgentCardProps) {
   const statusConfig = STATUS_CONFIG[agent.status]
   
   // Use the actual Intercom emoji if available
@@ -21,7 +23,10 @@ export function AgentCard({ agent }: AgentCardProps) {
   
   // Build className with ring color
   const ringClass = agent.ringColor ? `ring-${agent.ringColor}` : 'ring-blue'
-  const classNames = ['agent', ringClass].join(' ')
+  const classes = ['agent', ringClass]
+  if (needsSpacing) classes.push('agent-spacer')
+  if (isFirstInGroup) classes.push('agent-first-in-group')
+  const classNames = classes.join(' ')
   
   // Add warning indicator for red/yellow rings
   const isWarning = agent.ringColor === 'red' || agent.ringColor === 'yellow'
