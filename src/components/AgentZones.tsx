@@ -19,7 +19,19 @@ export function AgentZones({ cities, agentsByCity, currentTime }: AgentZonesProp
   }, [currentTime])
 
   const activeCities = useMemo(() => {
-    return cities.filter(c => nowUTC >= c.startHour && nowUTC < c.endHour)
+    return cities.filter(c => {
+      // Handle endHour > 24 (cities that span midnight)
+      if (c.endHour > 24) {
+        // City spans midnight: active if nowUTC >= startHour OR nowUTC < (endHour - 24)
+        const nextDayEndHour = c.endHour - 24
+        return nowUTC >= c.startHour || nowUTC < nextDayEndHour + 1
+      } else {
+        // Normal case: active if nowUTC is between startHour and endHour
+        // endHour represents the closing hour (e.g., 22 = 6pm EDT = 22:00 UTC)
+        // City is active until the end of that hour (22:59 UTC), so check < endHour + 1
+        return nowUTC >= c.startHour && nowUTC < c.endHour + 1
+      }
+    })
   }, [cities, nowUTC])
 
   return (
