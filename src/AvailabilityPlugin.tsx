@@ -1072,6 +1072,7 @@ export function AvailabilityPlugin() {
             value={intensity}
             onChange={handleIntensityChange}
             rowCount={chatsRowCount}
+            readOnly={true}
           />
           <Timeline
             cities={cities}

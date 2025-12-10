@@ -1,10 +1,11 @@
 interface IntensitySliderProps {
   value: number
-  onChange: (value: number) => void
+  onChange?: (value: number) => void
   rowCount?: number
+  readOnly?: boolean
 }
 
-export function IntensitySlider({ value, onChange, rowCount = 0 }: IntensitySliderProps) {
+export function IntensitySlider({ value, onChange, rowCount = 0, readOnly = false }: IntensitySliderProps) {
   // Calculate the color preview (same logic as in the parent)
   const v = Math.max(0, Math.min(100, value))
   let hue: number
@@ -36,8 +37,10 @@ export function IntensitySlider({ value, onChange, rowCount = 0 }: IntensitySlid
             min="0"
             max="100"
             value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
+            onChange={(e) => !readOnly && onChange && onChange(Number(e.target.value))}
             className="intensity-input"
+            disabled={readOnly}
+            style={{ cursor: readOnly ? 'default' : 'pointer' }}
           />
           <div 
             className="intensity-emoji-thumb"
