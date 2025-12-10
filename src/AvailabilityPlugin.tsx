@@ -498,6 +498,17 @@ export function AvailabilityPlugin() {
     return count
   }, [effectiveChatsData])
   
+  // Debug: Log column names for verification
+  useEffect(() => {
+    if (chatsColumns) {
+      const mapping = Object.entries(chatsColumns).reduce((acc, [id, col]) => {
+        acc[id] = col.name
+        return acc
+      }, {} as Record<string, string>)
+      console.log('[Columns] Chats Column Mapping:', mapping)
+    }
+  }, [chatsColumns])
+
   // Debug: Log calculated row count
   console.log('[Render] Current chatsRowCount:', chatsRowCount)
 
