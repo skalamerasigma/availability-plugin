@@ -498,6 +498,9 @@ export function AvailabilityPlugin() {
     return count
   }, [effectiveChatsData])
   
+  // Debug: Log calculated row count
+  console.log('[Render] Current chatsRowCount:', chatsRowCount)
+
   // Calculate intensity from chats row count
   const calculatedIntensity = useMemo(() => {
     console.log('[Auto Intensity] Calculating intensity...')
