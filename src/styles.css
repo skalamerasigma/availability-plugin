@@ -107,11 +107,6 @@ body {
   filter: grayscale(0.6) brightness(0.95);
 }
 
-/* SF bars should always be colored, even when inactive */
-.progress.sf-bar {
-  background: var(--active-color) !important;
-}
-
 /* Markers */
 .marker {
   position: absolute;

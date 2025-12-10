@@ -127,22 +127,19 @@ export function Timeline({ cities, currentTime, simulateTime }: TimelineProps) {
           // A city is "highlighted" only if it's actually active
           const isActive = activeCities.includes(city)
           const isHighlighted = isActive
-          // Apply night mode class to inactive city bars, except for SF which should always be colored
+          // Apply night mode class to inactive city bars
           // For display, cap endHour at 24 (visual representation)
           const displayEndHour = city.endHour > 24 ? 24 : city.endHour
-          const isSF = city.name === 'San Francisco' || city.code === 'SFO' || city.code === 'SF'
-          const className = `progress ${isHighlighted ? 'magnified' : 'dim'} ${!isActive && !isSF ? 'night-mode-bar' : ''} ${isSF ? 'sf-bar' : ''}`
-          
-          const style: { left: string; width: string } = {
-            left: `${hourToPercent(city.startHour)}%`,
-            width: `${hourToPercent(displayEndHour) - hourToPercent(city.startHour)}%`,
-          }
+          const className = `progress ${isHighlighted ? 'magnified' : 'dim'} ${!isActive ? 'night-mode-bar' : ''}`
           
           return (
             <div
               key={`progress-${idx}`}
               className={className}
-              style={style}
+              style={{
+                left: `${hourToPercent(city.startHour)}%`,
+                width: `${hourToPercent(displayEndHour) - hourToPercent(city.startHour)}%`,
+              }}
               title={city.name}
             />
           )
