@@ -323,6 +323,7 @@ export function AvailabilityPlugin() {
   // Get column mappings from Sigma using actual element IDs
   const columns = useElementColumns(sourceElementId)
   const scheduleColumns = useElementColumns(scheduleElementId)
+  const chatsColumns = useElementColumns(chatsElementId)
   
   // Get actual data from the connected Sigma worksheets using element IDs
   const sigmaData = useElementData(sourceElementId)
@@ -417,6 +418,7 @@ export function AvailabilityPlugin() {
   console.log('[Config] source value:', config.source)
   console.log('[Columns] source columns:', columns)
   console.log('[Columns] scheduleSource columns:', scheduleColumns)
+  console.log('[Columns] chatsSource columns:', chatsColumns)
   console.log('[Data] sigmaData:', sigmaData, 'keys:', Object.keys(sigmaData || {}))
   console.log('[Data] scheduleData:', scheduleData, 'keys:', Object.keys(scheduleData || {}))
   console.log('[Data] chatsData:', chatsData, 'keys:', Object.keys(chatsData || {}))
