@@ -10,6 +10,8 @@ import { Timeline } from './components/Timeline'
 import { AgentZones } from './components/AgentZones'
 import { Legend } from './components/Legend'
 import { IntensitySlider } from './components/IntensitySlider'
+import { FallbackGauge } from './components/FallbackGauge'
+import { ZoomIndicator } from './components/ZoomIndicator'
 import { useAgentDataFromApi } from './hooks/useAgentData'
 import { TEAM_MEMBERS } from './data/teamMembers'
 import type { City, AgentData, AgentStatus } from './types'
@@ -46,6 +48,38 @@ client.config.configureEditorPanel([
     source: 'scheduleSource',
     allowMultiple: true, // This will capture all hour columns (_0 through _18)
   },
+  {
+    name: 'scheduleCurrentlyOnChat',
+    type: 'column',
+    source: 'scheduleSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'scheduleCurrentlyLunch',
+    type: 'column',
+    source: 'scheduleSource',
+    allowMultiple: false,
+  },
+
+  // === OOO DATA SOURCE CONFIGURATION ===
+  // Connect to the OOO view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.OOO)
+  // This view lists TSEs that are OOO for the current day
+  {
+    name: 'oooSource',
+    type: 'element',
+  },
+  {
+    name: 'oooTSE',
+    type: 'column',
+    source: 'oooSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'oooStatus',
+    type: 'column',
+    source: 'oooSource',
+    allowMultiple: false,
+  },
 
   // === LEGACY DATA SOURCE (for non-schedule based status) ===
   {
@@ -66,6 +100,12 @@ client.config.configureEditorPanel([
   },
   {
     name: 'agentStatus',
+    type: 'column',
+    source: 'source',
+    allowMultiple: false,
+  },
+  {
+    name: 'agentMinutesInStatus',
     type: 'column',
     source: 'source',
     allowMultiple: false,
@@ -252,7 +292,9 @@ function getCurrentPacificHour(): number {
     hour: 'numeric',
     hour12: false,
   }).format(now)
-  return parseInt(pacificTime, 10)
+  const hour = parseInt(pacificTime, 10)
+  console.log(`[Time Debug] Current time: ${now.toISOString()}, Pacific hour: ${hour}`)
+  return hour
 }
 
 // Extract emoji from status string (first character if it's an emoji)
@@ -262,11 +304,13 @@ function extractEmoji(statusStr: string): string | undefined {
   const emojiMap: Record<string, string> = {
     '🟢': '🟢',
     '☕': '☕',
+    '🍕': '🍕',
     '🚫': '🚫',
     '🏡': '🏡',
     '🤒': '🤒',
     '🌴': '🌴',
     '🎯': '🎯',
+    '🖥': '🖥',
   }
   // Check if the string starts with any known emoji
   for (const emoji of Object.keys(emojiMap)) {
@@ -288,7 +332,7 @@ function getStatusEmoji(status: AgentStatus): string {
     chat: '🟢',
     closing: '🚫',
     call: '🎯',
-    lunch: '☕',
+    lunch: '🍕',
     away: '🏡',
   }
   return emojiMap[status] || '🏡' // Default to home, not hourglass
@@ -303,7 +347,7 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
     case 'Y': return '🟢'  // On Chat
     case 'N': return '🚫'  // Off Chat
     case 'F': return '🎯'  // Focus Time
-    case 'L': return '☕'  // Lunch/Break
+    case 'L': return '🍕'  // Lunch/Break
     case 'X': return '🏡'  // Not working
     default: return '🏡'   // Unknown defaults to away, not hourglass
   }
@@ -311,7 +355,7 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 8.4 - Fire emoji slider thumb!')
+  console.log('🚀 PLUGIN VERSION: 8.11 - Added dedicated OOO view support for filtering TSEs who are OOO')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
@@ -325,24 +369,65 @@ export function AvailabilityPlugin() {
   const sourceElementId = config.source as string
   const scheduleElementId = config.scheduleSource as string
   const chatsElementId = config.chatsSource as string
+  const oooElementId = config.oooSource as string
   
   // Get column mappings from Sigma using actual element IDs
   const columns = useElementColumns(sourceElementId)
   const scheduleColumns = useElementColumns(scheduleElementId)
   const chatsColumns = useElementColumns(chatsElementId)
+  const oooColumns = useElementColumns(oooElementId)
   
   // Get actual data from the connected Sigma worksheets using element IDs
   const sigmaData = useElementData(sourceElementId)
   const scheduleData = useElementData(scheduleElementId)
   const chatsData = useElementData(chatsElementId)
+  const oooData = useElementData(oooElementId)
   
   // State to hold data from direct subscriptions
   const [directScheduleData, setDirectScheduleData] = useState<Record<string, any[]>>({})
   const [directSourceData, setDirectSourceData] = useState<Record<string, any[]>>({})
   const [directChatsData, setDirectChatsData] = useState<Record<string, any[]>>({})
+  const [directOooData, setDirectOooData] = useState<Record<string, any[]>>({})
   
   // Flag to track if effect ran
   const [effectRan, setEffectRan] = useState(false)
+  
+  // Track last refresh time
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+  
+  // Format timestamp for display
+  const formatLastUpdated = (date: Date): string => {
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    
+    if (diffMins < 1) return 'Just now'
+    if (diffMins === 1) return '1 min ago'
+    if (diffMins < 60) return `${diffMins} mins ago`
+    
+    // Format as time if more than an hour
+    return date.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      hour12: true 
+    })
+  }
+  
+  // Auto-refresh every 2 minutes
+  useEffect(() => {
+    // Set initial timestamp
+    setLastUpdated(new Date())
+    
+    const refreshInterval = setInterval(() => {
+      console.log('[Auto-refresh] Refreshing page...')
+      setLastUpdated(new Date())
+      window.location.reload()
+    }, 2 * 60 * 1000) // 2 minutes = 120,000 milliseconds
+    
+    return () => {
+      clearInterval(refreshInterval)
+    }
+  }, [])
   
   // Subscribe directly to element data using client API
   useEffect(() => {
@@ -350,6 +435,7 @@ export function AvailabilityPlugin() {
     console.log('  scheduleElementId:', scheduleElementId)
     console.log('  sourceElementId:', sourceElementId)
     console.log('  chatsElementId:', chatsElementId)
+    console.log('  oooElementId:', oooElementId)
     setEffectRan(true)
     
     if (!client?.elements?.subscribeToElementData) {
@@ -357,7 +443,7 @@ export function AvailabilityPlugin() {
       return
     }
     
-    if (!scheduleElementId && !sourceElementId && !chatsElementId) {
+    if (!scheduleElementId && !sourceElementId && !chatsElementId && !oooElementId) {
       console.log('[Sigma Client] No element IDs yet, skipping subscriptions')
       return
     }
@@ -367,13 +453,17 @@ export function AvailabilityPlugin() {
     let unsubSchedule: (() => void) | undefined
     let unsubSource: (() => void) | undefined
     let unsubChats: (() => void) | undefined
+    let unsubOoo: (() => void) | undefined
     
     if (scheduleElementId) {
       try {
         console.log('[Sigma Client] Subscribing to schedule element:', scheduleElementId)
         unsubSchedule = client.elements.subscribeToElementData(scheduleElementId, (data) => {
-          console.log('[Sigma Client] ✓ Received schedule data:', Object.keys(data))
+          console.log('[Sigma Client] ✓ Received schedule data update:', Object.keys(data))
           setDirectScheduleData(data)
+          // Update timestamp when upstream data changes
+          setLastUpdated(new Date())
+          console.log('[Upstream Refresh] Schedule data updated, refreshing timestamp')
         })
         console.log('[Sigma Client] ✓ Schedule subscription created')
       } catch (e) {
@@ -385,8 +475,11 @@ export function AvailabilityPlugin() {
       try {
         console.log('[Sigma Client] Subscribing to source element:', sourceElementId)
         unsubSource = client.elements.subscribeToElementData(sourceElementId, (data) => {
-          console.log('[Sigma Client] ✓ Received source data:', Object.keys(data))
+          console.log('[Sigma Client] ✓ Received source data update:', Object.keys(data))
           setDirectSourceData(data)
+          // Update timestamp when upstream data changes
+          setLastUpdated(new Date())
+          console.log('[Upstream Refresh] Source data updated, refreshing timestamp')
         })
         console.log('[Sigma Client] ✓ Source subscription created')
       } catch (e) {
@@ -398,8 +491,11 @@ export function AvailabilityPlugin() {
       try {
         console.log('[Sigma Client] Subscribing to chats element:', chatsElementId)
         unsubChats = client.elements.subscribeToElementData(chatsElementId, (data) => {
-          console.log('[Sigma Client] ✓ Received chats data:', Object.keys(data))
+          console.log('[Sigma Client] ✓ Received chats data update:', Object.keys(data))
           setDirectChatsData(data)
+          // Update timestamp when upstream data changes
+          setLastUpdated(new Date())
+          console.log('[Upstream Refresh] Chats data updated, refreshing timestamp')
         })
         console.log('[Sigma Client] ✓ Chats subscription created')
       } catch (e) {
@@ -407,12 +503,29 @@ export function AvailabilityPlugin() {
       }
     }
     
+    if (oooElementId) {
+      try {
+        console.log('[Sigma Client] Subscribing to OOO element:', oooElementId)
+        unsubOoo = client.elements.subscribeToElementData(oooElementId, (data) => {
+          console.log('[Sigma Client] ✓ Received OOO data update:', Object.keys(data))
+          setDirectOooData(data)
+          // Update timestamp when upstream data changes
+          setLastUpdated(new Date())
+          console.log('[Upstream Refresh] OOO data updated, refreshing timestamp')
+        })
+        console.log('[Sigma Client] ✓ OOO subscription created')
+      } catch (e) {
+        console.error('[Sigma Client] ❌ Error subscribing to OOO:', e)
+      }
+    }
+    
     return () => {
       unsubSchedule?.()
       unsubSource?.()
       unsubChats?.()
+      unsubOoo?.()
     }
-  }, [scheduleElementId, sourceElementId, chatsElementId])
+  }, [scheduleElementId, sourceElementId, chatsElementId, oooElementId, client])
   
   // Log effect status
   console.log('[Effect Status] effectRan:', effectRan)
@@ -425,10 +538,13 @@ export function AvailabilityPlugin() {
   console.log('[Columns] source columns:', columns)
   console.log('[Columns] scheduleSource columns:', scheduleColumns)
   console.log('[Columns] chatsSource columns:', chatsColumns)
+  console.log('[Columns] oooSource columns:', oooColumns)
   console.log('[Data] sigmaData:', sigmaData, 'keys:', Object.keys(sigmaData || {}))
   console.log('[Data] scheduleData:', scheduleData, 'keys:', Object.keys(scheduleData || {}))
   console.log('[Data] chatsData:', chatsData, 'keys:', Object.keys(chatsData || {}))
   console.log('[Data] directChatsData:', directChatsData, 'keys:', Object.keys(directChatsData || {}))
+  console.log('[Data] oooData:', oooData, 'keys:', Object.keys(oooData || {}))
+  console.log('[Data] directOooData:', directOooData, 'keys:', Object.keys(directOooData || {}))
   
   // Try accessing data by column ID directly
   const scheduleTSEId = config.scheduleTSE as string
@@ -445,6 +561,7 @@ export function AvailabilityPlugin() {
   // Also log direct subscription data
   console.log('[Direct] directScheduleData keys:', Object.keys(directScheduleData))
   console.log('[Direct] directSourceData keys:', Object.keys(directSourceData))
+  console.log('[Direct] directOooData keys:', Object.keys(directOooData))
   
   // Debug OOO values
   const oooColId = config.scheduleOOO as string
@@ -493,6 +610,14 @@ export function AvailabilityPlugin() {
     const keys = Object.keys(effectiveChatsData)
     console.log('[Chats Row Count] Keys found:', keys)
     
+    // Priority: Use the explicitly configured trigger column
+    const triggerCol = config.chatsTriggerColumn as string
+    if (triggerCol && effectiveChatsData[triggerCol]) {
+       const count = effectiveChatsData[triggerCol].length
+       console.log('[Chats Row Count] Using trigger column:', triggerCol, 'Count:', count)
+       return count
+    }
+    
     if (keys.length === 0) {
       console.log('[Chats Row Count] No keys, returning 0')
       return 0
@@ -517,7 +642,7 @@ export function AvailabilityPlugin() {
 
   // Debug: Log calculated row count
   console.log('[Render] Current chatsRowCount:', chatsRowCount)
-
+  
   // Calculate intensity from chats row count
   const calculatedIntensity = useMemo(() => {
     console.log('[Auto Intensity] Calculating intensity...')
@@ -634,18 +759,57 @@ export function AvailabilityPlugin() {
     const scheduleTSECol = config.scheduleTSE as string
     const scheduleOOOCol = config.scheduleOOO as string
     const scheduleHoursCols = config.scheduleHours as string | string[] | undefined
+    const scheduleCurrentlyOnChatCol = config.scheduleCurrentlyOnChat as string | undefined
+    const scheduleCurrentlyLunchCol = config.scheduleCurrentlyLunch as string | undefined
     
     console.log('[Availability Plugin] Schedule column mappings:')
     console.log('  scheduleTSE:', scheduleTSECol)
     console.log('  scheduleOOO:', scheduleOOOCol)
     console.log('  scheduleHours:', scheduleHoursCols)
+    console.log('  scheduleCurrentlyOnChat:', scheduleCurrentlyOnChatCol)
+    console.log('  scheduleCurrentlyLunch:', scheduleCurrentlyLunchCol)
     
     // Use direct subscription data if available, fall back to hook data
     const effectiveScheduleData = Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData
     const effectiveSourceData = Object.keys(directSourceData).length > 0 ? directSourceData : sigmaData
+    const effectiveOooData = Object.keys(directOooData).length > 0 ? directOooData : oooData
     
     console.log('[Availability Plugin] Using effectiveScheduleData with', Object.keys(effectiveScheduleData || {}).length, 'columns')
     console.log('[Availability Plugin] Using effectiveSourceData with', Object.keys(effectiveSourceData || {}).length, 'columns')
+    console.log('[Availability Plugin] Using effectiveOooData with', Object.keys(effectiveOooData || {}).length, 'columns')
+    
+    // Build a Set of TSE names that are OOO (from the dedicated OOO view)
+    const oooTseSet = new Set<string>()
+    const oooTseCol = config.oooTSE as string
+    const oooStatusCol = config.oooStatus as string
+    
+    if (effectiveOooData && oooTseCol) {
+      const tseNames = effectiveOooData[oooTseCol] as string[] | undefined
+      const oooStatuses = oooStatusCol ? effectiveOooData[oooStatusCol] as string[] | undefined : undefined
+      
+      console.log('[OOO Filter] OOO TSE column:', oooTseCol)
+      console.log('[OOO Filter] OOO Status column:', oooStatusCol)
+      console.log('[OOO Filter] TSE names from OOO view:', tseNames?.slice(0, 10))
+      
+      if (tseNames) {
+        tseNames.forEach((name, idx) => {
+          if (!name) return
+          // If there's a status column, check if it's "Yes", otherwise assume all entries are OOO
+          // (The view already filters to OOO='Yes' based on the view definition)
+          const isOoo = oooStatuses ? oooStatuses[idx]?.toLowerCase() === 'yes' : true
+          if (isOoo) {
+            const cleanName = name.trim().toLowerCase()
+            oooTseSet.add(cleanName)
+            // Also add first name for matching
+            const firstName = cleanName.split(' ')[0]
+            if (firstName !== cleanName) {
+              oooTseSet.add(firstName)
+            }
+          }
+        })
+        console.log('[OOO Filter] OOO TSEs (will be hidden):', Array.from(oooTseSet))
+      }
+    }
     
     if (effectiveScheduleData && scheduleTSECol) {
       const scheduleColumnKeys = Object.keys(effectiveScheduleData)
@@ -679,6 +843,21 @@ export function AvailabilityPlugin() {
       console.log('[Availability Plugin] Looking for hour column: _' + currentPacificHour)
       console.log('[Availability Plugin] Hour column found:', hourCol)
       
+      // Log the actual hour data for Nathan S
+      if (tseCol && hourCol && effectiveScheduleData[hourCol]) {
+        const tseNames = effectiveScheduleData[tseCol] as string[]
+        const hourData = effectiveScheduleData[hourCol] as string[]
+        const nathanIndex = tseNames?.findIndex(name => 
+          name?.toLowerCase().includes('nathan s') || name?.toLowerCase() === 'nathan s'
+        )
+        if (nathanIndex >= 0) {
+          console.log(`[Nathan Debug] Found Nathan S at index ${nathanIndex}`)
+          console.log(`[Nathan Debug] Hour data for Nathan S: "${hourData?.[nathanIndex]}"`)
+        } else {
+          console.log(`[Nathan Debug] Nathan S not found in TSE column`)
+        }
+      }
+      
       // Log sample data for first few rows
       if (tseCol) {
         const tseData = effectiveScheduleData[tseCol] as string[]
@@ -691,36 +870,52 @@ export function AvailabilityPlugin() {
       
       // Build a map of Intercom statuses if available
       const intercomStatusMap = new Map<string, string>()
+      const minutesInStatusMap = new Map<string, number>()
       console.log('[Availability Plugin] Checking Intercom status data...')
       console.log('[Availability Plugin] effectiveSourceData keys:', Object.keys(effectiveSourceData || {}))
       
       // Use config column IDs directly (from the Sigma column configuration)
       const agentNameCol = config.agentName as string
       const agentStatusCol = config.agentStatus as string
+      const agentMinutesCol = config.agentMinutesInStatus as string
       
-      console.log('[Availability Plugin] Config columns - agentName:', agentNameCol, 'agentStatus:', agentStatusCol)
+      console.log('[Availability Plugin] Config columns - agentName:', agentNameCol, 'agentStatus:', agentStatusCol, 'agentMinutesInStatus:', agentMinutesCol)
       
       if (effectiveSourceData && agentNameCol && agentStatusCol) {
         const names = effectiveSourceData[agentNameCol] as string[] | undefined
         const statuses = effectiveSourceData[agentStatusCol] as string[] | undefined
+        const minutes = agentMinutesCol ? effectiveSourceData[agentMinutesCol] as string[] | number[] | undefined : undefined
         
         console.log('[Availability Plugin] ✓ Status source connected!')
         console.log('[Availability Plugin] Name data sample:', names?.slice(0, 3))
         console.log('[Availability Plugin] Status data sample:', statuses?.slice(0, 3))
+        console.log('[Availability Plugin] Minutes data sample:', minutes?.slice(0, 3))
         
         if (names && statuses) {
           names.forEach((name, idx) => {
-            if (name && statuses[idx]) {
+            if (name) {
               const cleanName = name.trim().toLowerCase()
-              intercomStatusMap.set(cleanName, statuses[idx])
+              intercomStatusMap.set(cleanName, statuses[idx] || '')
               // Also try first name only for matching
               const firstName = cleanName.split(' ')[0]
               if (firstName !== cleanName) {
-                intercomStatusMap.set(firstName, statuses[idx])
+                intercomStatusMap.set(firstName, statuses[idx] || '')
+              }
+              
+              // Store minutes in status if available
+              if (minutes && minutes[idx] !== undefined && minutes[idx] !== null) {
+                const minutesValue = typeof minutes[idx] === 'string' ? parseInt(minutes[idx] as string, 10) : minutes[idx] as number
+                if (!isNaN(minutesValue)) {
+                  minutesInStatusMap.set(cleanName, minutesValue)
+                  if (firstName !== cleanName) {
+                    minutesInStatusMap.set(firstName, minutesValue)
+                  }
+                }
               }
             }
           })
           console.log('[Availability Plugin] Built intercomStatusMap with', intercomStatusMap.size, 'entries')
+          console.log('[Availability Plugin] Built minutesInStatusMap with', minutesInStatusMap.size, 'entries')
           // Log a few entries for debugging
           const entries = Array.from(intercomStatusMap.entries()).slice(0, 5)
           console.log('[Availability Plugin] Sample intercom statuses:', entries)
@@ -728,6 +923,65 @@ export function AvailabilityPlugin() {
       } else {
         console.log('[Availability Plugin] ⚠️ Missing agentName or agentStatus column config')
       }
+      
+      // Parse CURRENTLY_ON_CHAT and CURRENTLY_LUNCH columns to get list of allowed agents
+      const allowedAgentsSet = new Set<string>()
+      
+      // Parse CURRENTLY_ON_CHAT column
+      if (scheduleCurrentlyOnChatCol && effectiveScheduleData[scheduleCurrentlyOnChatCol]) {
+        const currentlyOnChatData = effectiveScheduleData[scheduleCurrentlyOnChatCol] as string[] | undefined
+        if (currentlyOnChatData && currentlyOnChatData.length > 0) {
+          let totalNames = 0
+          currentlyOnChatData.forEach((value, rowIndex) => {
+            if (!value || !value.trim()) {
+              return
+            }
+            
+            const agentNames = value
+              .split(',')
+              .map(name => name.trim())
+              .filter(name => name.length > 0)
+            
+            agentNames.forEach(name => {
+              allowedAgentsSet.add(name.toLowerCase())
+            })
+            
+            totalNames += agentNames.length
+            console.log(`[Availability Plugin] CURRENTLY_ON_CHAT row ${rowIndex}:`, agentNames)
+          })
+          
+          console.log('[Availability Plugin] CURRENTLY_ON_CHAT total names processed:', totalNames)
+        }
+      }
+      
+      // Parse CURRENTLY_LUNCH column (agents on lunch should also be displayed)
+      if (scheduleCurrentlyLunchCol && effectiveScheduleData[scheduleCurrentlyLunchCol]) {
+        const currentlyLunchData = effectiveScheduleData[scheduleCurrentlyLunchCol] as string[] | undefined
+        if (currentlyLunchData && currentlyLunchData.length > 0) {
+          let totalNames = 0
+          currentlyLunchData.forEach((value, rowIndex) => {
+            if (!value || !value.trim()) {
+              return
+            }
+            
+            const agentNames = value
+              .split(',')
+              .map(name => name.trim())
+              .filter(name => name.length > 0)
+            
+            agentNames.forEach(name => {
+              allowedAgentsSet.add(name.toLowerCase())
+            })
+            
+            totalNames += agentNames.length
+            console.log(`[Availability Plugin] CURRENTLY_LUNCH row ${rowIndex}:`, agentNames)
+          })
+          
+          console.log('[Availability Plugin] CURRENTLY_LUNCH total names processed:', totalNames)
+        }
+      }
+      
+      console.log('[Availability Plugin] Allowed agents (unique, combined):', Array.from(allowedAgentsSet))
       
       if (tseCol && effectiveScheduleData[tseCol]) {
         const tseData = effectiveScheduleData[tseCol] as string[] | undefined
@@ -740,24 +994,138 @@ export function AvailabilityPlugin() {
               if (!name) return null // Skip empty rows
               
               const cleanName = name?.trim()
+              
+              // Skip Nathan Parrish - we only want Nathan Simpson
+              if (cleanName?.toLowerCase().includes('nathan p') || 
+                  cleanName?.toLowerCase() === 'nathan parrish') {
+                console.log(`[Availability Plugin] Skipping Nathan Parrish: "${cleanName}"`)
+                return null
+              }
+              
+              // Check if TSE is OOO according to the dedicated OOO view
+              const cleanNameLowerForOoo = cleanName?.toLowerCase()
+              const firstNameForOoo = cleanNameLowerForOoo?.split(' ')[0]
+              if (oooTseSet.size > 0 && (oooTseSet.has(cleanNameLowerForOoo) || oooTseSet.has(firstNameForOoo))) {
+                console.log(`[OOO Filter] Agent "${cleanName}" is OOO according to OOO view - skipping`)
+                return null
+              }
+              
               const isOOO = oooData?.[idx]?.toLowerCase() === 'yes'
               const hourBlock = hourData?.[idx] || '' // Default to empty if no hour data
               
-              // Only show TSEs who have "Y" in their hourly chat block
-              if (hourBlock?.toUpperCase() !== 'Y') return null
+              // Filter: Include agents who are either:
+              // 1. In the CURRENTLY_ON_CHAT or CURRENTLY_LUNCH list, OR
+              // 2. Have an "available" Intercom status (actively available even if not scheduled)
+              if (allowedAgentsSet.size > 0) {
+                const cleanNameLower = cleanName?.toLowerCase()
+                const firstName = cleanNameLower.split(' ')[0]
+                let isAllowed = false
+                
+                // Check if agent has "available" Intercom status
+                const agentIntercomStatus = intercomStatusMap.get(cleanNameLower) || 
+                                           intercomStatusMap.get(firstName) ||
+                                           intercomStatusMap.get(cleanNameLower.replace(/\s+\w+$/, ''))
+                
+                if (agentIntercomStatus && agentIntercomStatus.toLowerCase().includes('available')) {
+                  isAllowed = true
+                  console.log(`[Availability Plugin] Agent "${cleanName}" has "available" Intercom status - including`)
+                }
+                
+                // Also check if in the scheduled lists
+                if (!isAllowed) {
+                  // Try exact match first
+                  if (allowedAgentsSet.has(cleanNameLower)) {
+                    isAllowed = true
+                  } else {
+                    // Try matching by first name (most common case)
+                    // CURRENTLY_ON_CHAT has "Salman", TSE might have "Salman" or full name
+                    if (allowedAgentsSet.has(firstName)) {
+                      isAllowed = true
+                    } else {
+                      // Try reverse: check if any allowed name matches this agent's first name
+                      // Handle cases like CURRENTLY_ON_CHAT has "Nathan" but TSE has "Nathan S"
+                      for (const allowedName of allowedAgentsSet) {
+                        if (firstName === allowedName || cleanNameLower.startsWith(allowedName + ' ')) {
+                          isAllowed = true
+                          break
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                if (!isAllowed) {
+                  console.log(`[Availability Plugin] Agent "${cleanName}" not in scheduled lists and not available - skipping`)
+                  return null
+                }
+              }
+              
+              // Filter: Exclude agents with "X" in current hour block (not working)
+              if (hourBlock?.toUpperCase() === 'X') {
+                console.log(`[Availability Plugin] Agent "${cleanName}" has "X" in hour block - skipping`)
+                return null
+              }
+              
+              // Debug logging for Nathan
+              if (cleanName?.toLowerCase().includes('nathan')) {
+                console.log(`[Nathan Debug] Found Nathan: "${cleanName}"`)
+                console.log(`  - Hour block: "${hourBlock}"`)
+                console.log(`  - isOOO: ${isOOO}`)
+              }
               
               // Look up team member by name to get avatar and timezone
-              const teamMember = TEAM_MEMBERS.find(
-                m => m.name.toLowerCase() === cleanName?.toLowerCase()
-              )
+              // Handle "Nathan S" -> "Nathan" matching
+              const teamMember = TEAM_MEMBERS.find(m => {
+                const memberNameLower = m.name.toLowerCase()
+                const cleanNameLower = cleanName?.toLowerCase()
+                
+                // Exact match
+                if (memberNameLower === cleanNameLower) return true
+                
+                // Handle "Nathan S" matching to "Nathan"
+                if (cleanNameLower === 'nathan s' && memberNameLower === 'nathan') {
+                  console.log(`[Nathan Debug] Matched "Nathan S" to team member "Nathan"`)
+                  return true
+                }
+                
+                // Handle names with initials (e.g., "Hem Kamdar" -> "Hem")
+                const cleanNameFirst = cleanNameLower?.split(' ')[0]
+                if (memberNameLower === cleanNameFirst) return true
+                
+                return false
+              })
               
-              if (!teamMember) return null // Skip if not in our team list
+              if (!teamMember) {
+                // Extra debug for Nathan
+                if (cleanName?.toLowerCase().includes('nathan')) {
+                  console.log(`[Nathan Debug] Not found in team list! Looking for: "${cleanName}"`)
+                  const teamNathans = TEAM_MEMBERS.filter(m => m.name.toLowerCase().includes('nathan'))
+                  console.log(`[Nathan Debug] Team members with Nathan:`, teamNathans.map(m => m.name))
+                }
+                return null // Skip if not in our team list
+              } else {
+                // Log successful Nathan match
+                if (cleanName?.toLowerCase().includes('nathan')) {
+                  console.log(`[Nathan Debug] Successfully matched "${cleanName}" to team member "${teamMember.name}"`)
+                }
+              }
+              
+              // Only show agents who are scheduled for the current hour (have a valid hour block: Y, N, F, or L)
+              // During off hours, don't show anyone, including OOO agents
+              const validHourBlocks = ['Y', 'N', 'F', 'L']
+              const hourBlockUpper = hourBlock?.toUpperCase() || ''
+              if (!validHourBlocks.includes(hourBlockUpper)) {
+                if (cleanName?.toLowerCase().includes('nathan')) {
+                  console.log(`[Nathan Debug] No valid hour block (got "${hourBlock}") - skipping (even if OOO)`)
+                }
+                return null
+              }
               
               // Determine status: Intercom status takes priority (real-time), then OOO, then schedule
               let status: AgentStatus
               let statusEmoji: string
               let statusLabel: string
-              let ringColor: 'red' | 'yellow' | 'green' | 'blue' = 'blue' // Default to blue
+              let ringColor: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'purple' | 'orange' = 'purple' // Default to purple
               
               // Try multiple ways to match the name in intercom data
               const nameLower = cleanName.toLowerCase()
@@ -767,23 +1135,46 @@ export function AvailabilityPlugin() {
                                     // Also try without middle names
                                     intercomStatusMap.get(nameLower.replace(/\s+\w+$/, ''))
               
+              // Get minutes in status
+              const minutesInStatus = minutesInStatusMap.get(nameLower) || 
+                                     minutesInStatusMap.get(firstName) ||
+                                     minutesInStatusMap.get(nameLower.replace(/\s+\w+$/, '')) ||
+                                     undefined
+              
               // Determine ring color based on schedule + Intercom status
               const scheduledForChat = hourBlock?.toUpperCase() === 'Y'
-              if (scheduledForChat && intercomStatus) {
-                const intercomLower = intercomStatus.toLowerCase()
-                if (intercomLower.includes('off chat')) {
-                  ringColor = 'red' // Should be chatting but is off chat
-                } else if (intercomLower.includes('break')) {
-                  ringColor = 'yellow' // Should be chatting but is on break
-                } else if (intercomLower.includes('available')) {
-                  ringColor = 'green' // Scheduled and available - good!
-                }
-                // Otherwise stays blue (default)
-              } else if (scheduledForChat && !intercomStatus) {
-                // Scheduled for chat but no Intercom status - assume available based on schedule
-                ringColor = 'green'
+              
+              // Debug Nathan's ring color logic
+              if (cleanName?.toLowerCase().includes('nathan')) {
+                console.log(`  - Scheduled for chat: ${scheduledForChat}`)
+                console.log(`  - Intercom status: "${intercomStatus || 'none'}"`)
               }
-              // All other cases stay blue (default)
+              
+              // Check if agent is on a Zoom call first (takes priority)
+              if (intercomStatus && (intercomStatus.toLowerCase().includes('zoom') || intercomStatus.includes('🖥'))) {
+                ringColor = 'zoom'
+              } else if (scheduledForChat) {
+                // Agent is scheduled for chat this hour
+                if (intercomStatus) {
+                  const intercomLower = intercomStatus.toLowerCase()
+                  if (intercomLower.includes('available')) {
+                    ringColor = 'green' // Scheduled and available - good!
+                  } else if (intercomLower.includes('break') || intercomLower.includes('lunch')) {
+                    ringColor = 'yellow' // Should be chatting but is on break
+                  } else if (intercomLower.includes('off chat') || intercomLower.includes('closing')) {
+                    ringColor = 'red' // Should be chatting but is off chat
+                  } else {
+                    // Scheduled but unknown status - orange warning
+                    ringColor = 'orange'
+                  }
+                } else {
+                  // Scheduled for chat but no Intercom status
+                  ringColor = 'orange' // Warning - can't confirm they're available
+                }
+              } else {
+                // Not scheduled for chat - default ring color
+                ringColor = 'purple'
+              }
               
               // Priority 1: Use real-time Intercom status if available
               if (intercomStatus) {
@@ -817,14 +1208,24 @@ export function AvailabilityPlugin() {
               const finalStatusEmoji = statusEmoji || getStatusEmoji(status)
               const finalStatusLabel = statusLabel || 'Unknown'
               
-              // Debug: log status assignment for first few agents
-              if (idx < 5) {
-                console.log(`[Availability Plugin] Agent ${cleanName}:`)
+              // Filter: If agent has "Off Chat Hour" status but is NOT scheduled for chat, skip them
+              // We only want to show "Off Chat Hour" agents if they SHOULD be on chat (to highlight the issue)
+              if (intercomStatus && intercomStatus.includes('Off Chat Hour') && !scheduledForChat) {
+                console.log(`[Availability Plugin] Agent "${cleanName}" has "Off Chat Hour" status but not scheduled for chat - skipping`)
+                return null
+              }
+              
+              // Debug: log status assignment for first few agents and Nathan
+              if (idx < 3 || cleanName?.toLowerCase().includes('nathan')) {
+                console.log(`[Availability Plugin] Agent ${cleanName} (idx: ${idx}):`)
                 console.log(`  - hourBlock from schedule: "${hourBlock}"`)
                 console.log(`  - isOOO: ${isOOO}`)
+                console.log(`  - teamMember found: ${teamMember ? 'YES' : 'NO'}`)
                 console.log(`  - tried lookup keys: "${nameLower}", "${firstName}"`)
                 console.log(`  - intercomStatus found: "${intercomStatus || 'none'}"`)
                 console.log(`  - finalStatus: ${status}, emoji: ${finalStatusEmoji}`)
+                console.log(`  - ringColor: ${ringColor}`)
+                console.log(`  - Will show: YES (returning agent data)`)
               }
               
               return {
@@ -836,6 +1237,7 @@ export function AvailabilityPlugin() {
                 statusEmoji: finalStatusEmoji,
                 statusLabel: finalStatusLabel,
                 ringColor,
+                minutesInStatus,
               }
             })
             .filter((agent): agent is AgentData => agent !== null)
@@ -884,7 +1286,7 @@ export function AvailabilityPlugin() {
       ...agent,
       status: statusUpdates[agent.id] || agent.status,
     }))
-  }, [sigmaData, columns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData])
+  }, [sigmaData, columns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData, directOooData, oooData])
 
   // OOO agents state - will be populated from schedule data (hidden for now)
   const [_oooAgents, setOooAgents] = useState<{ name: string; avatar: string }[]>([])
@@ -1087,6 +1489,7 @@ export function AvailabilityPlugin() {
           <ol style={{ color: '#666', paddingLeft: '20px', lineHeight: '1.8' }}>
             <li><strong>scheduleSource</strong>: Connect to <code>TSE_SCHEDULE_CURRENT</code> worksheet</li>
             <li><strong>source</strong>: Connect to <code>DASHBOARD_OF_TSES_AND_THEIR_STATUS</code> worksheet</li>
+            <li><strong>oooSource</strong>: Connect to <code>SIGMA_ON_SIGMA.SIGMA_WRITABLE.OOO</code> view (for OOO filtering)</li>
           </ol>
           <p style={{ color: '#888', fontSize: '12px', marginTop: '16px' }}>
             Debug: scheduleData keys: {Object.keys(scheduleData || {}).length}, 
@@ -1101,23 +1504,64 @@ export function AvailabilityPlugin() {
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
       <div className="main-content">
         <div className="timeline-section">
-          <IntensitySlider
-            value={intensity}
-            onChange={handleIntensityChange}
-            rowCount={chatsRowCount}
-            readOnly={true}
-          />
-          <Timeline
-            cities={cities}
-            currentTime={currentTime}
-            simulateTime={simulateTime}
-          />
+          <div style={{ marginBottom: '8px', position: 'relative' }}>
+            <h2 style={{ 
+              fontSize: '16px', 
+              fontWeight: 600, 
+              color: '#333', 
+              margin: '0 0 12px 0',
+              textAlign: 'center'
+            }}>Reso Queue</h2>
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              fontSize: '11px',
+              color: '#6b7280',
+              fontWeight: 400
+            }}>
+              Last updated: {formatLastUpdated(lastUpdated)}
+            </div>
+            <div style={{
+              position: 'absolute',
+              left: '20px',
+              top: '5px',
+              zIndex: 10
+            }}>
+              <ZoomIndicator chatsRowCount={chatsRowCount} />
+            </div>
+            <IntensitySlider
+              value={intensity}
+              onChange={handleIntensityChange}
+              rowCount={chatsRowCount}
+              readOnly={true}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <Timeline
+                cities={cities}
+                currentTime={currentTime}
+                simulateTime={simulateTime}
+              />
 
-          <AgentZones
-            cities={cities}
-            agentsByCity={agentsByCity}
-            currentTime={currentTime}
-          />
+              <AgentZones
+                cities={cities}
+                agentsByCity={agentsByCity}
+                currentTime={currentTime}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <FallbackGauge
+                cities={cities}
+                agentsByCity={agentsByCity}
+                scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
+                scheduleTSE={config.scheduleTSE as string | undefined}
+                scheduleOOO={config.scheduleOOO as string | undefined}
+              />
+            </div>
+          </div>
 
           {showLegend && <Legend />}
         </div>

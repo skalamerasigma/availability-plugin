@@ -8,9 +8,6 @@ export interface TeamMember {
   defaultStatus?: AgentStatus
 }
 
-// Placeholder avatar for team members without Cloudinary images
-const placeholder = (id: string) => `https://i.pravatar.cc/80?u=${id}`
-
 /**
  * Real team member data with Cloudinary avatars
  */
@@ -115,7 +112,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'sanyam',
     name: 'Sanyam',
-    avatar: placeholder('sanyam'),
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765382789/Untitled_design_10_kzcja0.svg',
     timezone: 'America/Los_Angeles',
   },
   {
@@ -182,6 +179,12 @@ export const TEAM_MEMBERS: TeamMember[] = [
     id: 'ratna',
     name: 'Ratna',
     avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765311039/Untitled_design_17_lchaky.svg',
+    timezone: 'America/Los_Angeles',
+  },
+  {
+    id: 'sahibeer',
+    name: 'Sahibeer',
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1767268642/sahibeer_g0bk1n.svg',
     timezone: 'America/Los_Angeles',
   },
 

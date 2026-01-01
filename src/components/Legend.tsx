@@ -1,19 +1,18 @@
 export function Legend() {
   const items = [
-    { emoji: '🟢', label: 'Available' },
-    { emoji: '🚫', label: 'Off Chat' },
-    { emoji: '☕', label: 'On a break' },
-    { emoji: '🎯', label: 'Focus Time' },
-    { emoji: '🏡', label: 'Done for day' },
-    { emoji: '🤒', label: 'Out sick' },
-    { emoji: '🌴', label: 'Out of office' },
+    { ringColor: 'green', label: 'Available' },
+    { ringColor: 'yellow', label: 'On a break' },
+    { ringColor: 'orange', label: 'Status unclear' },
+    { ringColor: 'red', label: 'Off Chat' },
+    { ringColor: 'zoom', label: 'On a zoom' },
+    { ringColor: 'purple', label: 'Not scheduled' },
   ]
 
   return (
     <div className="legend">
       {items.map((item) => (
-        <span key={item.emoji} className="legend-item">
-          <span className="legend-emoji">{item.emoji}</span> {item.label}
+        <span key={item.ringColor} className="legend-item">
+          <span className={`legend-ring ring-${item.ringColor}`}></span> {item.label}
         </span>
       ))}
     </div>

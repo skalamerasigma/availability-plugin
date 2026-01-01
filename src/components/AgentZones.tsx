@@ -40,18 +40,25 @@ export function AgentZones({ cities, agentsByCity, currentTime }: AgentZonesProp
         const agents = agentsByCity.get(city.timezone) || []
         const isActive = activeCities.includes(city)
 
-        // Sort agents to group all green-ring agents together
+        // Sort agents to group by ring color: green → yellow → orange → red → zoom → purple → blue (other)
+        const colorPriority: Record<string, number> = {
+          green: 0,
+          yellow: 1,
+          orange: 2,
+          red: 3,
+          zoom: 4,
+          purple: 5,
+          blue: 6,
+        }
+        
         const sortedAgents = [...agents].sort((a, b) => {
-          const aIsGreen = a.ringColor === 'green'
-          const bIsGreen = b.ringColor === 'green'
-          
-          // Green agents come first
-          if (aIsGreen && !bIsGreen) return -1
-          if (!aIsGreen && bIsGreen) return 1
-          
-          // Within same group, maintain original order
-          return 0
+          const aPriority = colorPriority[a.ringColor || 'purple'] ?? 5
+          const bPriority = colorPriority[b.ringColor || 'purple'] ?? 5
+          return aPriority - bPriority
         })
+
+        // Colors that should overlap within their group
+        const overlappingColors = ['green', 'yellow', 'orange', 'red', 'blue', 'zoom', 'purple']
 
         return (
           <div
@@ -62,20 +69,25 @@ export function AgentZones({ cities, agentsByCity, currentTime }: AgentZonesProp
             <div className="agents">
               {sortedAgents.map((agent, index) => {
                 const prevAgent = index > 0 ? sortedAgents[index - 1] : null
-                const isGreen = agent.ringColor === 'green'
-                const prevIsGreen = prevAgent?.ringColor === 'green'
+                const currentColor = agent.ringColor || 'purple'
+                const prevColor = prevAgent?.ringColor || 'purple'
+                const isOverlappingColor = overlappingColors.includes(currentColor)
                 
-                // Add spacing when transitioning from green to non-green or vice versa
-                const needsSpacing = prevAgent ? (isGreen !== prevIsGreen) : undefined
-                const isFirstGreen = isGreen && index === 0
-                const isFirstGreenAfterNonGreen = isGreen && prevAgent ? !prevIsGreen : false
+                // Check if this is transitioning to a new color group
+                const isColorTransition = prevAgent && currentColor !== prevColor
+                
+                // First in an overlapping color group (needs margin reset)
+                const isFirstInGroup = isOverlappingColor && (index === 0 || isColorTransition)
+                
+                // Need spacing when transitioning between color groups (except for the very first agent)
+                const needsSpacing = isColorTransition
                 
                 return (
                   <AgentCard 
                     key={agent.id} 
                     agent={agent}
-                    needsSpacing={needsSpacing}
-                    isFirstInGroup={isFirstGreen || isFirstGreenAfterNonGreen}
+                    needsSpacing={needsSpacing || undefined}
+                    isFirstInGroup={isFirstInGroup || undefined}
                   />
                 )
               })}
