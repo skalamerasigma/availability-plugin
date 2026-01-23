@@ -594,7 +594,7 @@ body {
 
 /* Sidebar controls container */
 
-/* OOO Box - right of intensity slider */
+/* OOO Box */
 .ooo-box {
   display: flex;
   flex-direction: column;
@@ -635,123 +635,6 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   flex-shrink: 0;
 }
-
-/* Intensity control - sidebar next to timeline section */
-/* Horizontal intensity slider - minimalistic */
-.intensity-slider-horizontal {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 20px;
-  width: 100%;
-  max-width: 400px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.intensity-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  color: #666;
-  padding: 0 3px;
-  font-weight: 500;
-  margin-bottom: 7px;
-  transform: translateY(-4px);
-}
-
-.intensity-track-wrapper {
-  display: flex;
-  align-items: center;
-}
-
-.intensity-slider-container {
-  flex: 1;
-  position: relative;
-}
-
-.intensity-input {
-  width: 100%;
-  height: 8px;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-  background: linear-gradient(to right, #4caf50, #ffeb3b, #f44336);
-  border-radius: 4px;
-  outline: none;
-  transition: height 0.2s ease;
-}
-
-.intensity-input:hover {
-  height: 10px;
-}
-
-/* Hide default thumb - make it transparent but keep it functional */
-.intensity-input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  border: none;
-}
-
-.intensity-input::-moz-range-thumb {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  border: none;
-}
-
-/* Custom SVG thumb */
-.intensity-svg-thumb {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  user-select: none;
-  transition: left 0.1s ease;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 68px;
-  height: 68px;
-}
-
-.intensity-thumb-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-  transition: transform 0.15s ease, filter 0.15s ease;
-}
-
-.intensity-slider-container:hover .intensity-thumb-img {
-  transform: scale(1.1);
-  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
-}
-
-.intensity-input::-webkit-slider-runnable-track {
-  height: 8px;
-  background: linear-gradient(to right, #4caf50, #ffeb3b, #f44336);
-  border-radius: 4px;
-}
-
-.intensity-input:hover::-webkit-slider-runnable-track {
-  height: 10px;
-}
-
-.intensity-input::-moz-range-track {
-  height: 8px;
-  background: linear-gradient(to right, #4caf50, #ffeb3b, #f44336);
-  border-radius: 4px;
-}
-
 
 /* Loading state */
 .app.loading {

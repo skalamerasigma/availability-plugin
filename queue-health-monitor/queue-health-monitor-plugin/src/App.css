@@ -1,0 +1,128 @@
+.app-container {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  font-size: 12px;
+  padding: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.header {
+  margin-bottom: 16px;
+}
+
+.header h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summary {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.refresh-button {
+  background-color: var(--bg-button-primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.refresh-button:hover {
+  background-color: var(--bg-button-primary-hover);
+}
+
+.refresh-button:active {
+  background-color: var(--bg-button-primary-hover);
+}
+
+.loading,
+.error {
+  padding: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.error {
+  color: var(--accent-error);
+}
+
+.table-container {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border-accent);
+  border-radius: 4px;
+  transition: border-color 0.3s ease;
+}
+
+.conversations-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11px;
+  background-color: var(--bg-secondary);
+  transition: background-color 0.3s ease;
+}
+
+.conversations-table thead {
+  background-color: #e2e2e2;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.dark-mode .conversations-table thead {
+  background-color: #3a3a3a;
+}
+
+.conversations-table th {
+  border-bottom: 2px solid var(--border-accent);
+  text-align: left;
+  padding: 8px;
+  font-weight: 600;
+  color: #35a1b4 !important;
+}
+
+.conversations-table td {
+  border-bottom: 1px solid var(--border-primary);
+  padding: 6px 8px;
+  color: var(--text-primary);
+}
+
+.conversations-table tbody tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.id-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: var(--text-primary);
+}
+
+.title-cell {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-cell {
+  white-space: nowrap;
+}
+
+.state-cell {
+  text-transform: capitalize;
+}
+

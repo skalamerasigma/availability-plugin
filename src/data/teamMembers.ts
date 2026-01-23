@@ -13,7 +13,7 @@ export interface TeamMember {
  */
 export const TEAM_MEMBERS: TeamMember[] = [
   // =====================
-  // NEW YORK (15 members)
+  // NEW YORK (19 members)
   // =====================
   {
     id: 'nick',
@@ -36,7 +36,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'nikhil',
     name: 'Nikhil',
-    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765284907/Untitled_design_13_qeyxww.svg',
+    avatar: 'https://static.intercomassets.com/avatars/8710209/square_128/d575c470-8926-4431-aaee-1569111745e5_1-1755714993.jpg',
     timezone: 'America/New_York',
   },
   {
@@ -88,12 +88,6 @@ export const TEAM_MEMBERS: TeamMember[] = [
     timezone: 'America/New_York',
   },
   {
-    id: 'priyanshi',
-    name: 'Priyanshi',
-    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765232390/12_avm2xl.svg',
-    timezone: 'America/New_York',
-  },
-  {
     id: 'siddhi',
     name: 'Siddhi',
     avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765232392/6_f3d2qt.svg',
@@ -105,9 +99,33 @@ export const TEAM_MEMBERS: TeamMember[] = [
     avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765232390/11_xrb9qj.svg',
     timezone: 'America/New_York',
   },
+  {
+    id: 'stephen',
+    name: 'Stephen',
+    avatar: 'https://static.intercomassets.com/avatars/9110812/square_128/sigma_photo-1761684652.png',
+    timezone: 'America/New_York',
+  },
+  {
+    id: 'grace',
+    name: 'Grace',
+    avatar: 'https://static.intercomassets.com/avatars/7339274/square_128/slack_img_cropped-1714574408.jpeg',
+    timezone: 'America/New_York',
+  },
+  {
+    id: 'david',
+    name: 'David',
+    avatar: 'https://static.intercomassets.com/avatars/9656338/square_128/IMG_3055-1768339772.jpeg',
+    timezone: 'America/New_York',
+  },
+  {
+    id: 'zen',
+    name: 'Zen',
+    avatar: 'https://static.intercomassets.com/avatars/8893370/square_128/photo_squared-1758117953.jpeg',
+    timezone: 'America/New_York',
+  },
 
   // =========================
-  // SAN FRANCISCO (12 members)
+  // SAN FRANCISCO (16 members)
   // =========================
   {
     id: 'sanyam',
@@ -160,7 +178,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'hayden',
     name: 'Hayden',
-    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765311038/Untitled_design_18_uze5nk.svg',
+    avatar: 'https://static.intercomassets.com/avatars/8411107/square_128/IMG_4063-1748968966.JPG',
     timezone: 'America/Los_Angeles',
   },
   {
@@ -187,9 +205,27 @@ export const TEAM_MEMBERS: TeamMember[] = [
     avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1767268642/sahibeer_g0bk1n.svg',
     timezone: 'America/Los_Angeles',
   },
+  {
+    id: 'priyanshi',
+    name: 'Priyanshi',
+    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765232390/12_avm2xl.svg',
+    timezone: 'America/Los_Angeles',
+  },
+  {
+    id: 'chetana',
+    name: 'Chetana',
+    avatar: 'https://static.intercomassets.com/avatars/7274393/square_128/intercom_1712708295666-1712708358.jpeg',
+    timezone: 'America/Los_Angeles',
+  },
+  {
+    id: 'vruddhi',
+    name: 'Vruddhi',
+    avatar: 'https://static.intercomassets.com/avatars/9657303/square_128/Photo-1768083840.png',
+    timezone: 'America/Los_Angeles',
+  },
 
   // ==================
-  // LONDON (5 members)
+  // LONDON (7 members)
   // ==================
   {
     id: 'nathan',
@@ -219,6 +255,18 @@ export const TEAM_MEMBERS: TeamMember[] = [
     id: 'erin',
     name: 'Erin',
     avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765232386/19_q54uo5.svg',
+    timezone: 'Europe/London',
+  },
+  {
+    id: 'holly',
+    name: 'Holly',
+    avatar: 'https://static.intercomassets.com/avatars/7254229/square_128/IMG_5367-1740050085.jpg',
+    timezone: 'Europe/London',
+  },
+  {
+    id: 'somachi',
+    name: 'Somachi',
+    avatar: 'https://static.intercomassets.com/avatars/9654462/square_128/Somachi_headshot-1768473476.png',
     timezone: 'Europe/London',
   },
 ]

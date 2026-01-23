@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import {
   client,
   useConfig,
@@ -9,9 +9,7 @@ import {
 import { Timeline } from './components/Timeline'
 import { AgentZones } from './components/AgentZones'
 import { Legend } from './components/Legend'
-import { IntensitySlider } from './components/IntensitySlider'
 import { FallbackGauge } from './components/FallbackGauge'
-import { ZoomIndicator } from './components/ZoomIndicator'
 import { useAgentDataFromApi } from './hooks/useAgentData'
 import { TEAM_MEMBERS } from './data/teamMembers'
 import type { City, AgentData, AgentStatus } from './types'
@@ -353,6 +351,637 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
   }
 }
 
+function getMockUnassignedConversations(nowSeconds: number): any[] {
+  return [
+    { id: 'mock-1001', created_at: nowSeconds - 90, admin_assignee_id: null, admin_assignee: null },
+    { id: 'mock-1002', created_at: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },
+    { id: 'mock-1003', created_at: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },
+    { id: 'mock-1004', created_at: nowSeconds - 610, admin_assignee_id: null, admin_assignee: null },
+    { id: 'mock-1005', created_at: nowSeconds - 700, admin_assignee_id: null, admin_assignee: null },
+    { id: 'mock-1006', created_at: nowSeconds - 980, admin_assignee_id: null, admin_assignee: null },
+  ]
+}
+
+interface ResoQueueBeltProps {
+  unassignedConvs: any[]
+}
+
+function isConversationUnassigned(conversation: any): boolean {
+  const adminAssigneeId = conversation?.admin_assignee_id
+  const adminAssignee = conversation?.admin_assignee
+  const hasAssigneeId = adminAssigneeId !== null && adminAssigneeId !== undefined && adminAssigneeId !== ''
+  const hasAssigneeObject = adminAssignee && (typeof adminAssignee === 'object' ? (adminAssignee.id || adminAssignee.name) : true)
+  return !hasAssigneeId && !hasAssigneeObject
+}
+
+function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
+  const [conveyorBeltCurrentTime, setConveyorBeltCurrentTime] = useState(() => Date.now() / 1000)
+  const [showBreachedModal, setShowBreachedModal] = useState(false)
+  const confirmedBreachedIdsRef = useRef<Set<string>>(new Set())
+  const removedIdsRef = useRef<Set<string>>(new Set())
+  const checkedIdsRef = useRef<Set<string>>(new Set())
+  const checkingIdsRef = useRef<Set<string>>(new Set())
+  const lastResetRef = useRef<number | null>(null)
+  const assignmentStatusEndpoint = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/assignment-status'
+
+  // Update current time every second for conveyor belt animation
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setConveyorBeltCurrentTime(Date.now() / 1000)
+    }, 1000)
+    
+    return () => clearInterval(timer)
+  }, [])
+
+  // Calculate last breach reset timestamp (2:00 AM UTC)
+  const lastBreachResetTimestamp = useMemo(() => {
+    const now = new Date(conveyorBeltCurrentTime * 1000)
+    const resetTime = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      2,
+      0,
+      0,
+      0
+    ))
+    if (now < resetTime) resetTime.setUTCDate(resetTime.getUTCDate() - 1)
+    return resetTime.getTime() / 1000
+  }, [conveyorBeltCurrentTime])
+
+  useEffect(() => {
+    if (lastResetRef.current === lastBreachResetTimestamp) return
+    confirmedBreachedIdsRef.current.clear()
+    removedIdsRef.current.clear()
+    checkedIdsRef.current.clear()
+    checkingIdsRef.current.clear()
+    lastResetRef.current = lastBreachResetTimestamp
+  }, [lastBreachResetTimestamp])
+
+  const checkConversationAssignments = useCallback(async (conversationIds: string[]) => {
+    if (conversationIds.length === 0) return
+
+    const uniqueIds = Array.from(new Set(conversationIds)).filter(Boolean)
+    if (uniqueIds.length === 0) return
+
+    uniqueIds.forEach((conversationId) => {
+      checkingIdsRef.current.add(conversationId)
+    })
+
+    try {
+      const response = await fetch(assignmentStatusEndpoint, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ conversationIds: uniqueIds }),
+      })
+
+      if (!response.ok) {
+        console.warn('[Reso Queue] Failed to fetch assignment status:', response.status)
+        return
+      }
+
+      const payload = await response.json()
+      const results = Array.isArray(payload)
+        ? payload
+        : (payload.results || payload.conversations || [])
+
+      results.forEach((result: any) => {
+        const conversationId = String(result?.id || result?.conversation_id || '')
+        if (!conversationId) return
+
+        checkedIdsRef.current.add(conversationId)
+        const isUnassigned = typeof result?.isUnassigned === 'boolean'
+          ? result.isUnassigned
+          : isConversationUnassigned(result)
+
+        if (isUnassigned) {
+          confirmedBreachedIdsRef.current.add(conversationId)
+          removedIdsRef.current.delete(conversationId)
+        } else {
+          removedIdsRef.current.add(conversationId)
+          confirmedBreachedIdsRef.current.delete(conversationId)
+        }
+      })
+    } catch (error) {
+      console.error('[Reso Queue] Error fetching assignment status:', error)
+    } finally {
+      uniqueIds.forEach((conversationId) => {
+        checkingIdsRef.current.delete(conversationId)
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    const now = conveyorBeltCurrentTime
+    const eligibleIds: string[] = []
+
+    unassignedConvs.forEach((conv) => {
+      const convId = conv.id || conv.conversation_id
+      if (!convId || String(convId).startsWith('mock-')) return
+      if (checkedIdsRef.current.has(convId)) return
+      if (checkingIdsRef.current.has(convId)) return
+      if (removedIdsRef.current.has(convId)) return
+      if (confirmedBreachedIdsRef.current.has(convId)) return
+      if (!conv.createdTimestamp) return
+
+      const elapsedSeconds = now - conv.createdTimestamp
+      if (elapsedSeconds < 600) return
+
+      eligibleIds.push(String(convId))
+    })
+
+    if (eligibleIds.length === 0) return
+
+    const batchSize = 20
+    checkConversationAssignments(eligibleIds.slice(0, batchSize))
+  }, [unassignedConvs, conveyorBeltCurrentTime, checkConversationAssignments])
+
+  return (
+    <>
+      {/* Reso Queue - Waiting Conveyor Belt */}
+      <div style={{
+        marginBottom: '24px',
+        overflow: 'visible'
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '16px'
+        }}>
+          <h3 style={{
+            margin: 0,
+            fontSize: '18px',
+            fontWeight: 600,
+            color: '#333',
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            Reso Queue - Waiting
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginLeft: '10px',
+              padding: '2px 8px',
+              borderRadius: '999px',
+              backgroundColor: unassignedConvs.length > 10 
+                ? 'rgba(253, 135, 137, 0.15)'
+                : unassignedConvs.length > 5
+                ? 'rgba(255, 193, 7, 0.2)'
+                : 'rgba(76, 236, 140, 0.2)',
+              color: unassignedConvs.length > 10 
+                ? '#fd8789'
+                : unassignedConvs.length > 5
+                ? '#ffc107'
+                : '#4cec8c',
+              fontSize: '13px',
+              fontWeight: 700,
+              lineHeight: 1
+            }}>
+              {unassignedConvs.length}
+            </span>
+          </h3>
+        </div>
+        
+        {/* Conveyor Belt Visualization */}
+        <div style={{
+          width: '100%',
+          maxWidth: '1350px',
+          height: '120px',
+          position: 'relative',
+          backgroundColor: 'transparent',
+          overflow: 'visible',
+          marginBottom: '12px',
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          paddingTop: '20px',
+          paddingBottom: '20px',
+          paddingLeft: '10px',
+          paddingRight: '110px'
+        }}>
+          {/* Horizontal gradient line (green to red) */}
+          <div style={{
+            position: 'absolute',
+            left: '10px',
+            right: '110px',
+            top: '50%',
+            height: '4px',
+            background: 'linear-gradient(to right, #4cec8c 0%, #ffc107 50%, #ff9800 80%, #fd8789 100%)',
+            transform: 'translateY(-50%)',
+            zIndex: 1,
+            borderRadius: '2px'
+          }} />
+          
+          {/* 10-minute threshold line */}
+          <div style={{
+            position: 'absolute',
+            right: '110px',
+            top: '20px',
+            bottom: '20px',
+            width: '4px',
+            backgroundColor: '#fd8789',
+            zIndex: 10,
+            boxShadow: '0 0 8px rgba(253, 135, 137, 0.3)'
+          }} />
+          
+          {/* Threshold label */}
+          <div style={{
+            position: 'absolute',
+            right: '118px',
+            top: '8px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: '#fd8789',
+            backgroundColor: 'rgba(253, 135, 137, 0.1)',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            zIndex: 11,
+            whiteSpace: 'nowrap'
+          }}>
+            10 min
+          </div>
+          
+          {/* Conveyor belt items */}
+          {unassignedConvs.filter((conv) => {
+            const createdTimestamp = conv.createdTimestamp
+            if (!createdTimestamp) return false
+            const convId = conv.id || conv.conversation_id
+            if (convId && removedIdsRef.current.has(convId)) return false
+            if (convId && confirmedBreachedIdsRef.current.has(convId)) return false
+            return true
+          }).map((conv) => {
+            const convId = conv.id || conv.conversation_id
+            const createdTimestamp = conv.createdTimestamp
+            
+            const elapsedSeconds = conveyorBeltCurrentTime - createdTimestamp
+            const progressPercent = Math.min((elapsedSeconds / 600) * 100, 100)
+            const adjustedProgressPercent = Math.min(progressPercent * 0.90, 90)
+            
+            const isPendingBreachCheck = elapsedSeconds >= 600 && elapsedSeconds < 660
+            const isConfirmedBreached = !!(convId && confirmedBreachedIdsRef.current.has(convId))
+            const isBreached = elapsedSeconds >= 600
+            
+            // Calculate color based on progress
+            const getColor = (percent: number) => {
+              if (percent >= 100) {
+                return { bg: '#fd8789', border: '#d84c4c', text: '#ffffff' }
+              } else if (percent >= 80) {
+                const factor = (percent - 80) / 20
+                return {
+                  bg: `rgb(${255 - Math.floor(57 * factor)}, ${193 - Math.floor(105 * factor)}, ${7 - Math.floor(7 * factor)})`,
+                  border: `rgb(${245 - Math.floor(161 * factor)}, ${124 - Math.floor(76 * factor)}, ${0})`,
+                  text: '#ffffff'
+                }
+              } else if (percent >= 50) {
+                const factor = (percent - 50) / 30
+                return {
+                  bg: `rgb(${255 - Math.floor(0 * factor)}, ${193 - Math.floor(41 * factor)}, ${7 + Math.floor(113 * factor)})`,
+                  border: `rgb(${245 - Math.floor(0 * factor)}, ${124 + Math.floor(31 * factor)}, ${0})`,
+                  text: '#292929'
+                }
+              } else {
+                const factor = percent / 50
+                return {
+                  bg: `rgb(${76 + Math.floor(179 * factor)}, ${236 + Math.floor(-43 * factor)}, ${140 - Math.floor(133 * factor)})`,
+                  border: `rgb(${51 + Math.floor(194 * factor)}, ${153 + Math.floor(-29 * factor)}, ${51 - Math.floor(51 * factor)})`,
+                  text: '#292929'
+                }
+              }
+            }
+            
+            const colors = getColor(progressPercent)
+            const secondsRemaining = Math.max(0, Math.floor(600 - elapsedSeconds))
+            const minutesRemaining = Math.floor(secondsRemaining / 60)
+            const secsRemaining = secondsRemaining % 60
+            
+            return (
+              <a
+                key={convId}
+                href={`https://app.intercom.com/a/inbox/${convId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  position: 'absolute',
+                  left: isBreached 
+                    ? `${Math.min(95 + (elapsedSeconds - 600) / 60 * 2, 98)}%`
+                    : `${Math.min(adjustedProgressPercent, 90)}%`,
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  transition: 'left 1s linear, z-index 0s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textDecoration: 'none',
+                  color: 'inherit',
+                  zIndex: isBreached ? 5 : 1,
+                  cursor: 'pointer'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)'
+                  e.currentTarget.style.zIndex = '100'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)'
+                  e.currentTarget.style.zIndex = isBreached ? '5' : '1'
+                }}
+                title={`Conversation ${convId} - ${isBreached ? 'BREACHED' : (isPendingBreachCheck ? 'Pending breach check' : `${minutesRemaining}m ${secsRemaining}s until breach`)}`}
+              >
+                <div style={{
+                  width: '80px',
+                  height: '80px',
+                  borderRadius: '12px',
+                  backgroundColor: colors.bg,
+                  border: `3px solid ${colors.border}`,
+                  color: colors.text,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '4px',
+                  boxShadow: `0 2px 8px rgba(0,0,0,0.2)`,
+                  transition: 'all 0.3s ease',
+                  padding: '6px'
+                }}>
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    color: colors.text,
+                    lineHeight: '1.2',
+                    textAlign: 'center'
+                  }}>
+                    {convId.toString().slice(-4)}
+                  </div>
+                  <div style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: isConfirmedBreached ? '#fd8789' : colors.text,
+                    textAlign: 'center',
+                    lineHeight: '1.2',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {isConfirmedBreached ? (
+                      <span style={{ color: '#fd8789', fontWeight: 700 }}>BREACHED</span>
+                    ) : (
+                      <>
+                        {minutesRemaining > 0 ? `${minutesRemaining}m ` : ''}{secsRemaining}s
+                      </>
+                    )}
+                  </div>
+                </div>
+              </a>
+            )
+          })}
+          
+          {/* Breached Section */}
+          {(() => {
+            const confirmedBreachedConvs = unassignedConvs.filter((conv) => {
+              const convId = conv.id || conv.conversation_id
+              if (!convId) return false
+              if (removedIdsRef.current.has(convId)) return false
+              if (!confirmedBreachedIdsRef.current.has(convId)) return false
+              const createdTimestamp = conv.createdTimestamp
+              if (!createdTimestamp) return false
+              if (createdTimestamp < lastBreachResetTimestamp) return false
+              return true
+            })
+
+            if (confirmedBreachedConvs.length === 0) return null
+
+            return (
+              <div
+                onClick={() => setShowBreachedModal(true)}
+                style={{
+                  position: 'absolute',
+                  right: '0px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  cursor: 'pointer',
+                  zIndex: 15
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
+                }}
+                title={`${confirmedBreachedConvs.length} breached conversation${confirmedBreachedConvs.length !== 1 ? 's' : ''} - Click to view`}
+              >
+                <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+                  {confirmedBreachedConvs.slice(0, 3).map((conv, idx) => (
+                    <div
+                      key={conv.id || conv.conversation_id}
+                      style={{
+                        position: 'absolute',
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '12px',
+                        backgroundColor: '#fd8789',
+                        border: '3px solid #d84c4c',
+                        color: '#ffffff',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        gap: '4px',
+                        boxShadow: `0 2px 8px rgba(0,0,0,0.2)`,
+                        transform: `translate(${idx * 4}px, ${idx * 4}px)`,
+                        transition: 'all 0.3s ease',
+                        zIndex: 15 - idx,
+                        padding: '6px'
+                      }}
+                    >
+                      {idx === 0 && (
+                        <>
+                          <div style={{
+                            fontSize: '20px',
+                            fontWeight: 700,
+                            color: '#ffffff',
+                            textAlign: 'center',
+                            lineHeight: '1.2'
+                          }}>
+                          {confirmedBreachedConvs.length}
+                          </div>
+                          <div style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            color: '#ffffff',
+                            textAlign: 'center',
+                            lineHeight: '1.2',
+                            marginTop: '0px'
+                          }}>
+                            BREACHED
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      </div>
+      
+      {/* Breached Conversations Modal */}
+      {showBreachedModal && (() => {
+        const breachedConvs = unassignedConvs.filter((conv) => {
+          const convId = conv.id || conv.conversation_id
+          if (!convId) return false
+          if (removedIdsRef.current.has(convId)) return false
+          if (!confirmedBreachedIdsRef.current.has(convId)) return false
+          const createdTimestamp = conv.createdTimestamp
+          if (!createdTimestamp) return false
+          if (createdTimestamp < lastBreachResetTimestamp) return false
+          return true
+        }).map((conv) => {
+          const createdTimestamp = conv.createdTimestamp
+          const elapsedSeconds = conveyorBeltCurrentTime - createdTimestamp
+          const waitTimeMinutes = Math.floor(elapsedSeconds / 60)
+          const waitTimeHours = Math.floor(waitTimeMinutes / 60)
+          const waitTimeDays = Math.floor(waitTimeHours / 24)
+          
+          let waitTimeDisplay = ''
+          if (waitTimeDays > 0) {
+            waitTimeDisplay = `${waitTimeDays}d ${waitTimeHours % 24}h`
+          } else if (waitTimeHours > 0) {
+            waitTimeDisplay = `${waitTimeHours}h ${waitTimeMinutes % 60}m`
+          } else {
+            waitTimeDisplay = `${waitTimeMinutes}m`
+          }
+          
+          return {
+            ...conv,
+            waitTimeDisplay,
+            elapsedSeconds
+          }
+        }).sort((a, b) => b.elapsedSeconds - a.elapsedSeconds)
+        
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 1000,
+              padding: '20px'
+            }}
+            onClick={() => setShowBreachedModal(false)}
+          >
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '12px',
+                padding: '24px',
+                maxWidth: '600px',
+                width: '100%',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                border: '1px solid #e0e0e0'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '20px'
+              }}>
+                <h2 style={{
+                  margin: 0,
+                  fontSize: '24px',
+                  fontWeight: 700,
+                  color: '#292929'
+                }}>
+                  Breached Conversations ({breachedConvs.length})
+                </h2>
+                <button
+                  onClick={() => setShowBreachedModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '24px',
+                    cursor: 'pointer',
+                    color: '#666',
+                    padding: '0',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '4px',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f0f0f0'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                {breachedConvs.map((conv) => {
+                  const convId = conv.id || conv.conversation_id
+                  return (
+                    <div
+                      key={convId}
+                      style={{
+                        padding: '12px',
+                        backgroundColor: '#f9f9f9',
+                        borderRadius: '8px',
+                        border: '1px solid #e0e0e0'
+                      }}
+                    >
+                      <a
+                        href={`https://app.intercom.com/a/inbox/${convId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          fontSize: '16px',
+                          fontWeight: 600,
+                          color: '#0066cc',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        Conversation {convId}
+                      </a>
+                      <div style={{
+                        fontSize: '14px',
+                        color: '#666',
+                        marginTop: '4px'
+                      }}>
+                        Wait time: {conv.waitTimeDisplay}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+    </>
+  )
+}
+
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
   console.log('🚀 PLUGIN VERSION: 8.11 - Added dedicated OOO view support for filtering TSEs who are OOO')
@@ -395,6 +1024,9 @@ export function AvailabilityPlugin() {
   // Track last refresh time
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
   
+  // Unassigned conversations state for conveyor belt
+  const [unassignedConversationsData, setUnassignedConversationsData] = useState<any[]>([])
+  
   // Format timestamp for display
   const formatLastUpdated = (date: Date): string => {
     const now = new Date()
@@ -412,22 +1044,71 @@ export function AvailabilityPlugin() {
       hour12: true 
     })
   }
+
   
-  // Auto-refresh every 2 minutes
-  useEffect(() => {
-    // Set initial timestamp
-    setLastUpdated(new Date())
-    
-    const refreshInterval = setInterval(() => {
-      console.log('[Auto-refresh] Refreshing page...')
-      setLastUpdated(new Date())
-      window.location.reload()
-    }, 2 * 60 * 1000) // 2 minutes = 120,000 milliseconds
-    
-    return () => {
-      clearInterval(refreshInterval)
+  // Fetch unassigned conversations
+  const fetchUnassignedConversations = useCallback(async () => {
+    try {
+      const apiBaseUrl = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/unassigned-only'
+      const res = await fetch(apiBaseUrl)
+      if (!res.ok) {
+        console.warn('Timeline Belt Plugin: Failed to fetch unassigned conversations:', res.status)
+        return
+      }
+      
+      const response = await res.json()
+      const fetchedConversations = Array.isArray(response) ? response : (response.conversations || [])
+      
+      setUnassignedConversationsData(fetchedConversations)
+    } catch (error) {
+      console.error('Timeline Belt Plugin: Error fetching unassigned conversations:', error)
     }
   }, [])
+  
+  // Fetch unassigned conversations every 1 minute
+  useEffect(() => {
+    let isMounted = true
+    
+    // Initial fetch
+    fetchUnassignedConversations()
+    
+    // Set up refresh every 1 minute (60000 ms)
+    const interval = setInterval(() => {
+      if (isMounted) {
+        fetchUnassignedConversations()
+      }
+    }, 60000)
+    
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [fetchUnassignedConversations])
+  
+  // Calculate unassigned conversations for conveyor belt
+  const unassignedConvs = useMemo(() => {
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+    )
+    const rawUnassignedConversations = unassignedConversationsData?.length
+      ? unassignedConversationsData
+      : (isLocalhost ? getMockUnassignedConversations(Date.now() / 1000) : [])
+
+    if (rawUnassignedConversations.length === 0) return []
+
+    return rawUnassignedConversations.map(conv => {
+      const createdAt = conv.created_at || conv.createdAt || conv.first_opened_at
+      const createdTimestamp = createdAt 
+        ? (typeof createdAt === "number" ? (createdAt > 1e12 ? createdAt / 1000 : createdAt) : new Date(createdAt).getTime() / 1000)
+        : null
+      
+      return {
+        ...conv,
+        createdTimestamp
+      }
+    })
+  }, [unassignedConversationsData])
   
   // Subscribe directly to element data using client API
   useEffect(() => {
@@ -1002,6 +1683,16 @@ export function AvailabilityPlugin() {
                 return null
               }
               
+              // Skip Brett Bedevian completely - check multiple variations
+              const brettCheckName = cleanName?.toLowerCase() || ''
+              if (brettCheckName.includes('brett') || 
+                  brettCheckName === 'brett bedevian' ||
+                  brettCheckName.startsWith('brett ') ||
+                  brettCheckName === 'brett') {
+                console.log(`[Availability Plugin] Skipping Brett Bedevian: "${cleanName}"`)
+                return null
+              }
+              
               // Check if TSE is OOO according to the dedicated OOO view
               const cleanNameLowerForOoo = cleanName?.toLowerCase()
               const firstNameForOoo = cleanNameLowerForOoo?.split(' ')[0]
@@ -1063,6 +1754,13 @@ export function AvailabilityPlugin() {
               // Filter: Exclude agents with "X" in current hour block (not working)
               if (hourBlock?.toUpperCase() === 'X') {
                 console.log(`[Availability Plugin] Agent "${cleanName}" has "X" in hour block - skipping`)
+                return null
+              }
+              
+              // Double-check: Skip Brett Bedevian completely (even if they passed earlier checks)
+              const brettFinalCheck = cleanName?.toLowerCase() || ''
+              if (brettFinalCheck.includes('brett')) {
+                console.log(`[Availability Plugin] Final check - Skipping Brett Bedevian: "${cleanName}"`)
                 return null
               }
               
@@ -1259,24 +1957,32 @@ export function AvailabilityPlugin() {
         const timezoneData = sigmaData[timezoneCol] as string[] | undefined
 
         if (nameData && statusData) {
-          return nameData.map((name, idx) => {
-            // Clean up name (remove trailing spaces)
-            const cleanName = name?.trim()
-            
-            // Look up team member by name to get avatar and timezone
-            const teamMember = TEAM_MEMBERS.find(
-              m => m.name.toLowerCase() === cleanName?.toLowerCase()
-            )
-            
-            return {
-              id: `agent-${idx}`,
-              name: cleanName,
-              avatar: avatarData?.[idx] || teamMember?.avatar || `https://i.pravatar.cc/40?u=${cleanName}`,
-              status: parseStatus(statusData[idx]),
-              // Use timezone from data if available, otherwise look up from team member
-              timezone: timezoneData?.[idx] || teamMember?.timezone || 'America/New_York',
-            }
-          })
+          return nameData
+            .map((name, idx) => {
+              // Clean up name (remove trailing spaces)
+              const cleanName = name?.trim()
+              
+              // Skip Brett Bedevian completely
+              const brettLegacyCheck = cleanName?.toLowerCase() || ''
+              if (brettLegacyCheck.includes('brett')) {
+                return null
+              }
+              
+              // Look up team member by name to get avatar and timezone
+              const teamMember = TEAM_MEMBERS.find(
+                m => m.name.toLowerCase() === cleanName?.toLowerCase()
+              )
+              
+              return {
+                id: `agent-${idx}`,
+                name: cleanName,
+                avatar: avatarData?.[idx] || teamMember?.avatar || `https://i.pravatar.cc/40?u=${cleanName}`,
+                status: parseStatus(statusData[idx]),
+                // Use timezone from data if available, otherwise look up from team member
+                timezone: timezoneData?.[idx] || teamMember?.timezone || 'America/New_York',
+              }
+            })
+            .filter((agent): agent is AgentData => agent !== null)
         }
       }
     }
@@ -1445,16 +2151,6 @@ export function AvailabilityPlugin() {
     return `hsl(${hue} 70% 45%)`
   }, [intensity])
 
-  // Handle intensity change and optionally trigger Sigma action
-  const handleIntensityChange = useCallback((value: number) => {
-    setIntensity(value)
-    
-    // You can trigger Sigma actions when values change
-    // This allows other Sigma elements to react to this plugin
-    // client.triggerAction('intensityChanged', { value })
-  }, [])
-
-
   // Show loading state for API
   if (apiUrl && apiLoading) {
     return (
@@ -1505,13 +2201,6 @@ export function AvailabilityPlugin() {
       <div className="main-content">
         <div className="timeline-section">
           <div style={{ marginBottom: '8px', position: 'relative' }}>
-            <h2 style={{ 
-              fontSize: '16px', 
-              fontWeight: 600, 
-              color: '#333', 
-              margin: '0 0 12px 0',
-              textAlign: 'center'
-            }}>Reso Queue</h2>
             <div style={{
               position: 'absolute',
               top: 0,
@@ -1522,21 +2211,9 @@ export function AvailabilityPlugin() {
             }}>
               Last updated: {formatLastUpdated(lastUpdated)}
             </div>
-            <div style={{
-              position: 'absolute',
-              left: '20px',
-              top: '5px',
-              zIndex: 10
-            }}>
-              <ZoomIndicator chatsRowCount={chatsRowCount} />
-            </div>
-            <IntensitySlider
-              value={intensity}
-              onChange={handleIntensityChange}
-              rowCount={chatsRowCount}
-              readOnly={true}
-            />
           </div>
+          <ResoQueueBelt unassignedConvs={unassignedConvs} />
+
           <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <Timeline
