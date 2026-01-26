@@ -10,8 +10,12 @@ import { Timeline } from './components/Timeline'
 import { AgentZones } from './components/AgentZones'
 import { Legend } from './components/Legend'
 import { FallbackGauge } from './components/FallbackGauge'
+import { OfficeHours } from './components/OfficeHours'
+import { OOOProfilePictures } from './components/OOOProfilePictures'
 import { TSEConversationTable } from './components/TSEConversationTable'
+import { IncidentBanner } from './components/IncidentBanner'
 import { useAgentDataFromApi } from './hooks/useAgentData'
+import { useIntercomData } from './hooks/useIntercomData'
 import { TEAM_MEMBERS } from './data/teamMembers'
 import type { City, AgentData, AgentStatus } from './types'
 
@@ -55,6 +59,12 @@ client.config.configureEditorPanel([
   },
   {
     name: 'scheduleCurrentlyLunch',
+    type: 'column',
+    source: 'scheduleSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'scheduleCurrentlyOffChat',
     type: 'column',
     source: 'scheduleSource',
     allowMultiple: false,
@@ -152,6 +162,99 @@ client.config.configureEditorPanel([
     name: 'simulateTime',
     type: 'text',
     defaultValue: 'false',
+  },
+
+  // === OFFICE HOURS DATA SOURCE CONFIGURATION ===
+  // Connect to the Office Hours view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.OFFICE_HOURS_TODAY_SUPPORT)
+  {
+    name: 'officeHoursSource',
+    type: 'element',
+  },
+  {
+    name: 'officeHoursTseTopicTime',
+    type: 'column',
+    source: 'officeHoursSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'officeHoursStatus',
+    type: 'column',
+    source: 'officeHoursSource',
+    allowMultiple: false,
+  },
+
+  // === TSE CONVERSATION DATA SOURCE CONFIGURATION ===
+  // Connect to the TSE Conversation view (with Open, Snoozed, Closed counts per TSE)
+  {
+    name: 'tseConversationSource',
+    type: 'element',
+  },
+  {
+    name: 'tseConversationTSE',
+    type: 'column',
+    source: 'tseConversationSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'tseConversationOpen',
+    type: 'column',
+    source: 'tseConversationSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'tseConversationSnoozed',
+    type: 'column',
+    source: 'tseConversationSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'tseConversationClosed',
+    type: 'column',
+    source: 'tseConversationSource',
+    allowMultiple: false,
+  },
+
+  // === INCIDENTS DATA SOURCE CONFIGURATION ===
+  // Connect to the Incidents view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.ALL_INCIDENTS_EXPLODED_API_RESPONSE)
+  {
+    name: 'incidentsSource',
+    type: 'element',
+  },
+  {
+    name: 'incidentDetails',
+    type: 'column',
+    source: 'incidentsSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'incidentSevStatus',
+    type: 'column',
+    source: 'incidentsSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'incidentCreatedAt',
+    type: 'column',
+    source: 'incidentsSource',
+    allowMultiple: false,
+  },
+  {
+    name: 'incidentUpdatedAt',
+    type: 'column',
+    source: 'incidentsSource',
+    allowMultiple: false,
+  },
+
+  // === TSE STATUS SUMMARY DATA SOURCES ===
+  // Connect to the Active TSEs view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.ACTIVE)
+  {
+    name: 'activeTSEsSource',
+    type: 'element',
+  },
+  // Connect to the Scheduled and Away TSEs view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.SCHEDULED_AND_AWAY)
+  {
+    name: 'awayTSEsSource',
+    type: 'element',
   },
 
   // === CITY CONFIGURATION ===
@@ -355,25 +458,25 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 function getMockUnassignedConversations(nowSeconds: number): any[] {
   return [
     // Green zone: 1-3 minutes (safe, more than 7 minutes remaining)
-    { id: 'mock-1001', created_at: nowSeconds - 60, admin_assignee_id: null, admin_assignee: null },   // 1 min
-    { id: 'mock-1002', created_at: nowSeconds - 120, admin_assignee_id: null, admin_assignee: null },  // 2 min
-    { id: 'mock-1003', created_at: nowSeconds - 180, admin_assignee_id: null, admin_assignee: null },  // 3 min
+    { id: 'mock-1001', created_at: nowSeconds - 60, waiting_since: nowSeconds - 60, admin_assignee_id: null, admin_assignee: null },   // 1 min
+    { id: 'mock-1002', created_at: nowSeconds - 120, waiting_since: nowSeconds - 120, admin_assignee_id: null, admin_assignee: null },  // 2 min
+    { id: 'mock-1003', created_at: nowSeconds - 180, waiting_since: nowSeconds - 180, admin_assignee_id: null, admin_assignee: null },  // 3 min
     
     // Yellow zone: 4-7 minutes (warning, 7-4 minutes remaining)
-    { id: 'mock-1004', created_at: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
-    { id: 'mock-1005', created_at: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
-    { id: 'mock-1006', created_at: nowSeconds - 360, admin_assignee_id: null, admin_assignee: null },  // 6 min
-    { id: 'mock-1007', created_at: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },  // 7 min
+    { id: 'mock-1004', created_at: nowSeconds - 240, waiting_since: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
+    { id: 'mock-1005', created_at: nowSeconds - 300, waiting_since: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
+    { id: 'mock-1006', created_at: nowSeconds - 360, waiting_since: nowSeconds - 360, admin_assignee_id: null, admin_assignee: null },  // 6 min
+    { id: 'mock-1007', created_at: nowSeconds - 420, waiting_since: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },  // 7 min
     
     // Red zone: 8-9 minutes (critical, less than 4 minutes remaining)
-    { id: 'mock-1008', created_at: nowSeconds - 480, admin_assignee_id: null, admin_assignee: null },  // 8 min
-    { id: 'mock-1009', created_at: nowSeconds - 540, admin_assignee_id: null, admin_assignee: null },  // 9 min
+    { id: 'mock-1008', created_at: nowSeconds - 480, waiting_since: nowSeconds - 480, admin_assignee_id: null, admin_assignee: null },  // 8 min
+    { id: 'mock-1009', created_at: nowSeconds - 540, waiting_since: nowSeconds - 540, admin_assignee_id: null, admin_assignee: null },  // 9 min
     
     // Breached: 10+ minutes (should appear in breached stack)
-    { id: 'mock-1010', created_at: nowSeconds - 610, admin_assignee_id: null, admin_assignee: null },  // 10.17 min
-    { id: 'mock-1011', created_at: nowSeconds - 700, admin_assignee_id: null, admin_assignee: null },  // 11.67 min
-    { id: 'mock-1012', created_at: nowSeconds - 850, admin_assignee_id: null, admin_assignee: null },  // 14.17 min
-    { id: 'mock-1013', created_at: nowSeconds - 980, admin_assignee_id: null, admin_assignee: null },  // 16.33 min
+    { id: 'mock-1010', created_at: nowSeconds - 610, waiting_since: nowSeconds - 610, admin_assignee_id: null, admin_assignee: null },  // 10.17 min
+    { id: 'mock-1011', created_at: nowSeconds - 700, waiting_since: nowSeconds - 700, admin_assignee_id: null, admin_assignee: null },  // 11.67 min
+    { id: 'mock-1012', created_at: nowSeconds - 850, waiting_since: nowSeconds - 850, admin_assignee_id: null, admin_assignee: null },  // 14.17 min
+    { id: 'mock-1013', created_at: nowSeconds - 980, waiting_since: nowSeconds - 980, admin_assignee_id: null, admin_assignee: null },  // 16.33 min
   ]
 }
 
@@ -442,6 +545,14 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
     return cutoffTime.getTime() / 1000
   }, [lastBreachResetTimestamp])
 
+  // Check if we're currently in the counting window (between 10 AM UTC and 2 AM UTC next day)
+  // Note: Currently unused but kept for future use
+  // const isInCountingWindow = useMemo(() => {
+  //   const now = conveyorBeltCurrentTime
+  //   // If current time is between reset (10 AM) and cutoff (2 AM next day), we're in counting window
+  //   return now >= lastBreachResetTimestamp && now < cutoffTimestamp
+  // }, [conveyorBeltCurrentTime, lastBreachResetTimestamp, cutoffTimestamp])
+
   useEffect(() => {
     if (lastResetRef.current === lastBreachResetTimestamp) return
     confirmedBreachedIdsRef.current.clear()
@@ -450,6 +561,13 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
     checkingIdsRef.current.clear()
     lastResetRef.current = lastBreachResetTimestamp
   }, [lastBreachResetTimestamp])
+
+  // TEMPORARILY DISABLED FOR TESTING - Close breached modal if we're outside the counting window
+  // useEffect(() => {
+  //   if (!isInCountingWindow && showBreachedModal) {
+  //     setShowBreachedModal(false)
+  //   }
+  // }, [isInCountingWindow, showBreachedModal])
 
   const checkConversationAssignments = useCallback(async (conversationIds: string[]) => {
     if (conversationIds.length === 0) return
@@ -520,7 +638,15 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
       if (confirmedBreachedIdsRef.current.has(convId)) return
       if (!conv.createdTimestamp) return
 
-      const elapsedSeconds = now - conv.createdTimestamp
+      // Use waiting_since for elapsed time calculation, fallback to createdTimestamp
+      const waitingSinceTimestamp = conv.waitingSinceTimestamp || conv.waiting_since
+        ? (typeof conv.waiting_since === "number" 
+            ? (conv.waiting_since > 1e12 ? conv.waiting_since / 1000 : conv.waiting_since)
+            : (conv.waitingSinceTimestamp || (conv.waiting_since ? new Date(conv.waiting_since).getTime() / 1000 : null)))
+        : null
+      
+      const waitStartTimestamp = waitingSinceTimestamp || conv.createdTimestamp
+      const elapsedSeconds = now - waitStartTimestamp
       if (elapsedSeconds < 600) return
 
       eligibleIds.push(String(convId))
@@ -542,7 +668,15 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
       if (!conv.createdTimestamp) return
       if (removedIdsRef.current.has(convId)) return
       
-      const elapsedSeconds = now - conv.createdTimestamp
+      // Use waiting_since for elapsed time calculation, fallback to createdTimestamp
+      const waitingSinceTimestamp = conv.waitingSinceTimestamp || conv.waiting_since
+        ? (typeof conv.waiting_since === "number" 
+            ? (conv.waiting_since > 1e12 ? conv.waiting_since / 1000 : conv.waiting_since)
+            : (conv.waitingSinceTimestamp || (conv.waiting_since ? new Date(conv.waiting_since).getTime() / 1000 : null)))
+        : null
+      
+      const waitStartTimestamp = waitingSinceTimestamp || conv.createdTimestamp
+      const elapsedSeconds = now - waitStartTimestamp
       // Mark as breached when elapsed time reaches 600 seconds (10 minutes)
       if (elapsedSeconds >= 600) {
         // Mark as breached
@@ -562,58 +696,134 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
         marginBottom: '24px',
         overflow: 'visible'
       }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '16px'
-        }}>
-          <h3 style={{
-            margin: 0,
-            fontSize: '18px',
-            fontWeight: 600,
-            color: '#333',
-            display: 'flex',
-            alignItems: 'center'
-          }}>
-            Reso Queue - Waiting
-            <span style={{
-              display: 'inline-flex',
+        {(() => {
+          // Calculate average wait time for all conversations received during the day
+          const conversationsForDay = unassignedConvs.filter((conv) => {
+            const convId = conv.id || conv.conversation_id
+            const createdTimestamp = conv.createdTimestamp
+            if (!createdTimestamp) return false
+            // Skip timestamp filters for mock conversations
+            if (convId && String(convId).startsWith('mock-')) return true
+            // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
+            if (createdTimestamp < lastBreachResetTimestamp) return false
+            if (createdTimestamp >= cutoffTimestamp) return false
+            return true
+          })
+
+          const totalWaitTimeSeconds = conversationsForDay.reduce((sum, conv) => {
+            // Use waiting_since for accurate wait time calculation
+            const waitingSinceTimestamp = conv.waitingSinceTimestamp || conv.waiting_since
+              ? (typeof conv.waiting_since === "number" 
+                  ? (conv.waiting_since > 1e12 ? conv.waiting_since / 1000 : conv.waiting_since)
+                  : (conv.waitingSinceTimestamp || (conv.waiting_since ? new Date(conv.waiting_since).getTime() / 1000 : null)))
+              : null
+            
+            // Fallback to createdTimestamp if waiting_since is not available
+            const waitStartTimestamp = waitingSinceTimestamp || conv.createdTimestamp
+            if (!waitStartTimestamp) return sum
+            
+            const elapsedSeconds = conveyorBeltCurrentTime - waitStartTimestamp
+            return sum + elapsedSeconds
+          }, 0)
+
+          const averageWaitTimeSeconds = conversationsForDay.length > 0
+            ? Math.round(totalWaitTimeSeconds / conversationsForDay.length)
+            : 0
+
+          // Format average wait time as "Xm Ys" or "Xs"
+          const formatWaitTime = (seconds: number): string => {
+            if (seconds < 60) {
+              return `${seconds}s`
+            }
+            const minutes = Math.floor(seconds / 60)
+            const remainingSeconds = seconds % 60
+            if (remainingSeconds === 0) {
+              return `${minutes}m`
+            }
+            return `${minutes}m ${remainingSeconds}s`
+          }
+
+          return (
+            <div style={{
+              display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              marginLeft: '16px',
-              padding: '8px 16px',
-              borderRadius: '999px',
-              backgroundColor: unassignedConvs.length > 10 
-                ? 'rgba(253, 135, 137, 0.15)'
-                : unassignedConvs.length > 5
-                ? 'rgba(255, 193, 7, 0.2)'
-                : 'rgba(76, 236, 140, 0.2)',
-              color: unassignedConvs.length > 10 
-                ? '#fd8789'
-                : unassignedConvs.length > 5
-                ? '#ffc107'
-                : '#4cec8c',
-              fontSize: '36px',
-              fontWeight: 700,
-              lineHeight: 1
+              justifyContent: 'space-between',
+              marginBottom: '40px'
             }}>
-              {unassignedConvs.length}
-            </span>
-          </h3>
-        </div>
+              <h3 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: 600,
+                color: '#333',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                Reso Queue - Waiting
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginLeft: '16px',
+                  padding: '8px 16px',
+                  borderRadius: '999px',
+                  backgroundColor: unassignedConvs.length > 10 
+                    ? 'rgba(253, 135, 137, 0.15)'
+                    : unassignedConvs.length > 5
+                    ? 'rgba(255, 193, 7, 0.2)'
+                    : 'rgba(76, 236, 140, 0.2)',
+                  color: unassignedConvs.length > 10 
+                    ? '#fd8789'
+                    : unassignedConvs.length > 5
+                    ? '#ffc107'
+                    : '#4cec8c',
+                  fontSize: '36px',
+                  fontWeight: 700,
+                  lineHeight: 1
+                }}>
+                  {unassignedConvs.length}
+                </span>
+                {/* Average Wait Time */}
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginLeft: '16px',
+                  padding: '8px 16px',
+                  borderRadius: '999px',
+                  backgroundColor: averageWaitTimeSeconds >= 360 
+                    ? 'rgba(253, 135, 137, 0.15)'  // Red if >= 6 minutes
+                    : averageWaitTimeSeconds >= 240
+                    ? 'rgba(255, 193, 7, 0.2)'      // Yellow if 4-5 minutes
+                    : 'rgba(76, 236, 140, 0.2)',    // Green if 0-3 minutes
+                  color: averageWaitTimeSeconds >= 360 
+                    ? '#fd8789'  // Red if >= 6 minutes
+                    : averageWaitTimeSeconds >= 240
+                    ? '#ffc107'  // Yellow if 4-5 minutes
+                    : '#4cec8c', // Green if 0-3 minutes
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  lineHeight: 1
+                }}
+                title={`Average wait time: ${formatWaitTime(averageWaitTimeSeconds)}`}
+                >
+                  Avg: {formatWaitTime(averageWaitTimeSeconds)}
+                </span>
+              </h3>
+            </div>
+          )
+        })()}
         
         {/* Conveyor Belt Visualization */}
         <div style={{
           width: '100%',
-          maxWidth: '1350px',
+          maxWidth: '100%',
           height: '120px',
           position: 'relative',
           backgroundColor: 'transparent',
           overflow: 'visible',
-          marginBottom: '12px',
-          marginLeft: 'auto',
-          marginRight: 'auto',
+          marginBottom: '32px',
+          marginLeft: 0,
+          marginRight: 0,
           paddingTop: '20px',
           paddingBottom: '20px',
           paddingLeft: '10px',
@@ -708,7 +918,15 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
             const convId = conv.id || conv.conversation_id
             const createdTimestamp = conv.createdTimestamp
             
-            const elapsedSeconds = conveyorBeltCurrentTime - createdTimestamp
+            // Use waiting_since for wait time calculation, fallback to createdTimestamp
+            const waitingSinceTimestamp = conv.waitingSinceTimestamp || conv.waiting_since
+              ? (typeof conv.waiting_since === "number" 
+                  ? (conv.waiting_since > 1e12 ? conv.waiting_since / 1000 : conv.waiting_since)
+                  : (conv.waitingSinceTimestamp || (conv.waiting_since ? new Date(conv.waiting_since).getTime() / 1000 : null)))
+              : null
+            
+            const waitStartTimestamp = waitingSinceTimestamp || createdTimestamp
+            const elapsedSeconds = waitStartTimestamp ? conveyorBeltCurrentTime - waitStartTimestamp : 0
             const progressPercent = Math.min((elapsedSeconds / 600) * 100, 100)
             
             const isPendingBreachCheck = elapsedSeconds >= 600 && elapsedSeconds < 660
@@ -823,6 +1041,9 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
           
           {/* Breached Section */}
           {(() => {
+            // TEMPORARILY UNHIDDEN FOR TESTING - Hide breached section during cutoff period (2 AM UTC to 10 AM UTC)
+            // if (!isInCountingWindow) return null
+
             const confirmedBreachedConvs = unassignedConvs.filter((conv) => {
               const convId = conv.id || conv.conversation_id
               if (!convId) return false
@@ -859,53 +1080,56 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
               : 0
 
             return (
-              <div
-                onClick={() => setShowBreachedModal(true)}
-                style={{
-                  position: 'absolute',
-                  right: '0px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  cursor: 'pointer',
-                  zIndex: 15,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '8px 12px',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
-                }}
-                title={`${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${totalConvsForDay}) - Click to view`}
-              >
-                {/* Breached percentage */}
-                <div style={{
-                  fontSize: '24px',
-                  fontWeight: 800,
-                  color: '#d84c4c',
-                  textAlign: 'center',
-                  lineHeight: '1'
-                }}>
-                  {breachedPercentage}%
+              <>
+                {/* Breached percentage - Right Side */}
+                <div
+                  onClick={() => setShowBreachedModal(true)}
+                  style={{
+                    position: 'absolute',
+                    right: '0px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    zIndex: 15,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '8px 12px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
+                  }}
+                  title={`${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${totalConvsForDay}) - Click to view`}
+                >
+                  {/* Breached percentage */}
+                  <div style={{
+                    fontSize: '24px',
+                    fontWeight: 800,
+                    color: '#d84c4c',
+                    textAlign: 'center',
+                    lineHeight: '1'
+                  }}>
+                    {breachedPercentage}%
+                  </div>
+                  {/* Label */}
+                  <div style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: '#d84c4c',
+                    textAlign: 'center',
+                    lineHeight: '1.2',
+                    marginTop: '4px',
+                    maxWidth: '80px'
+                  }}>
+                    {confirmedBreachedConvs.length}/{totalConvsForDay} 10+ min waits today
+                  </div>
                 </div>
-                {/* Label */}
-                <div style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: '#d84c4c',
-                  textAlign: 'center',
-                  lineHeight: '1.2',
-                  marginTop: '4px',
-                  maxWidth: '80px'
-                }}>
-                  {confirmedBreachedConvs.length}/{totalConvsForDay} 10+ min waits today
-                </div>
-              </div>
+              </>
             )
           })()}
         </div>
@@ -920,6 +1144,8 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
           if (!confirmedBreachedIdsRef.current.has(convId)) return false
           const createdTimestamp = conv.createdTimestamp
           if (!createdTimestamp) return false
+          // Skip timestamp filters for mock conversations
+          if (String(convId).startsWith('mock-')) return true
           // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
           if (createdTimestamp < lastBreachResetTimestamp) return false
           if (createdTimestamp >= cutoffTimestamp) return false
@@ -1293,18 +1519,164 @@ export function AvailabilityPlugin() {
   const scheduleElementId = config.scheduleSource as string
   const chatsElementId = config.chatsSource as string
   const oooElementId = config.oooSource as string
+  const officeHoursElementId = config.officeHoursSource as string
+  const incidentsElementId = config.incidentsSource as string
+  const activeTSEsElementId = config.activeTSEsSource as string
+  const awayTSEsElementId = config.awayTSEsSource as string
+  const tseConversationElementId = config.tseConversationSource as string
+  
+  // Debug: Log element IDs immediately after extraction
+  console.log('🔍 [AvailabilityPlugin] Element IDs from config:')
+  console.log('🔍   - activeTSEsElementId:', activeTSEsElementId, 'type:', typeof activeTSEsElementId, 'truthy:', !!activeTSEsElementId)
+  console.log('🔍   - awayTSEsElementId:', awayTSEsElementId, 'type:', typeof awayTSEsElementId, 'truthy:', !!awayTSEsElementId)
+  console.log('🔍   - config.activeTSEsSource:', config.activeTSEsSource)
+  console.log('🔍   - config.awayTSEsSource:', config.awayTSEsSource)
   
   // Get column mappings from Sigma using actual element IDs
   const columns = useElementColumns(sourceElementId)
   const scheduleColumns = useElementColumns(scheduleElementId)
   const chatsColumns = useElementColumns(chatsElementId)
   const oooColumns = useElementColumns(oooElementId)
+  // const officeHoursColumns = useElementColumns(officeHoursElementId) // Unused but kept for future use
+  const incidentsColumns = useElementColumns(incidentsElementId)
+  const activeTSEsColumns = useElementColumns(activeTSEsElementId)
+  const awayTSEsColumns = useElementColumns(awayTSEsElementId)
+  const tseConversationColumns = useElementColumns(tseConversationElementId)
   
   // Get actual data from the connected Sigma worksheets using element IDs
+  // Note: useElementData may return undefined if element ID is undefined, or empty object {} if element is connected but has no data
   const sigmaData = useElementData(sourceElementId)
   const scheduleData = useElementData(scheduleElementId)
   const chatsData = useElementData(chatsElementId)
   const oooData = useElementData(oooElementId)
+  const officeHoursData = useElementData(officeHoursElementId)
+  const incidentsData = useElementData(incidentsElementId)
+  
+  // Only call useElementData if element ID exists to avoid potential issues
+  const activeTSEsData = activeTSEsElementId ? useElementData(activeTSEsElementId) : undefined
+  const awayTSEsData = awayTSEsElementId ? useElementData(awayTSEsElementId) : undefined
+  const tseConversationData = tseConversationElementId ? useElementData(tseConversationElementId) : undefined
+  
+  // Debug: Log what useElementData returns immediately
+  console.log('🔍 [AvailabilityPlugin] useElementData results:')
+  console.log('🔍   - activeTSEsData:', activeTSEsData, 'type:', typeof activeTSEsData, 'is null:', activeTSEsData === null, 'is undefined:', activeTSEsData === undefined)
+  console.log('🔍   - awayTSEsData:', awayTSEsData, 'type:', typeof awayTSEsData, 'is null:', awayTSEsData === null, 'is undefined:', awayTSEsData === undefined)
+  if (activeTSEsData) {
+    console.log('🔍   - activeTSEsData keys count:', Object.keys(activeTSEsData).length)
+  }
+  if (awayTSEsData) {
+    console.log('🔍   - awayTSEsData keys count:', Object.keys(awayTSEsData).length)
+  }
+  
+  // Debug: Check columns to verify element connection
+  console.log('🔍 [AvailabilityPlugin] Column metadata check:')
+  console.log('🔍   - activeTSEsColumns:', activeTSEsColumns, 'keys:', activeTSEsColumns ? Object.keys(activeTSEsColumns).length : 'N/A')
+  console.log('🔍   - awayTSEsColumns:', awayTSEsColumns, 'keys:', awayTSEsColumns ? Object.keys(awayTSEsColumns).length : 'N/A')
+  
+  // Log column names to verify we're connected to the right table
+  if (activeTSEsColumns && Object.keys(activeTSEsColumns).length > 0) {
+    console.log('🔍   - activeTSEsColumns column names:', Object.values(activeTSEsColumns).map(col => col.name))
+    console.log('🔍   - activeTSEsColumns full object:', JSON.stringify(activeTSEsColumns, null, 2))
+  }
+  if (awayTSEsColumns && Object.keys(awayTSEsColumns).length > 0) {
+    console.log('🔍   - awayTSEsColumns column names:', Object.values(awayTSEsColumns).map(col => col.name))
+  }
+  
+  // If columns exist but data is empty, that's suspicious
+  if (activeTSEsColumns && Object.keys(activeTSEsColumns).length > 0 && activeTSEsData && Object.keys(activeTSEsData).length === 0) {
+    console.warn('⚠️ [AvailabilityPlugin] ACTIVE element has columns but NO DATA - element may be connected but table is empty or not loading')
+    console.warn('⚠️   This could mean:')
+    console.warn('⚠️   1. The element is connected to ACTIVE table but it has no rows')
+    console.warn('⚠️   2. The element is connected to a different table/view')
+    console.warn('⚠️   3. There are filters applied that remove all rows')
+    console.warn('⚠️   4. Data is still loading (check again in a few seconds)')
+  }
+  if (awayTSEsColumns && Object.keys(awayTSEsColumns).length > 0 && awayTSEsData && Object.keys(awayTSEsData).length === 0) {
+    console.warn('⚠️ [AvailabilityPlugin] AWAY element has columns but NO DATA - element may be connected but table is empty (expected if table is empty)')
+  }
+  
+  // Check if data structure matches column structure
+  if (activeTSEsColumns && activeTSEsData) {
+    const columnIds = Object.keys(activeTSEsColumns)
+    const dataKeys = Object.keys(activeTSEsData)
+    console.log('🔍 [AvailabilityPlugin] ACTIVE data structure comparison:')
+    console.log('🔍   - Column IDs:', columnIds)
+    console.log('🔍   - Data keys:', dataKeys)
+    console.log('🔍   - Match?', JSON.stringify(columnIds.sort()) === JSON.stringify(dataKeys.sort()))
+    
+    // Check if column IDs match data keys
+    const missingInData = columnIds.filter(id => !dataKeys.includes(id))
+    const extraInData = dataKeys.filter(key => !columnIds.includes(key))
+    if (missingInData.length > 0) {
+      console.warn('⚠️   - Column IDs missing in data:', missingInData)
+    }
+    if (extraInData.length > 0) {
+      console.warn('⚠️   - Data keys not in columns:', extraInData)
+    }
+  }
+  
+  // Debug logging for TSE status summary data
+  console.log('🔍🔍🔍 [AvailabilityPlugin] TSE Status Summary Data Sources:')
+  console.log('🔍   - activeTSEsElementId:', activeTSEsElementId, typeof activeTSEsElementId)
+  console.log('🔍   - awayTSEsElementId:', awayTSEsElementId, typeof awayTSEsElementId)
+  console.log('🔍   - activeTSEsData:', activeTSEsData, typeof activeTSEsData)
+  console.log('🔍   - awayTSEsData:', awayTSEsData, typeof awayTSEsData)
+  console.log('🔍   - activeTSEsColumns:', activeTSEsColumns, typeof activeTSEsColumns)
+  console.log('🔍   - awayTSEsColumns:', awayTSEsColumns, typeof awayTSEsColumns)
+  
+  // Check if element IDs are configured
+  if (!activeTSEsElementId) {
+    console.warn('⚠️ [AvailabilityPlugin] activeTSEsElementId is NOT configured!')
+  }
+  if (!awayTSEsElementId) {
+    console.warn('⚠️ [AvailabilityPlugin] awayTSEsElementId is NOT configured!')
+  }
+  
+  if (activeTSEsData) {
+    const activeKeys = Object.keys(activeTSEsData)
+    console.log('🔍   - activeTSEsData keys:', activeKeys, 'count:', activeKeys.length)
+    if (activeKeys.length === 0) {
+      console.warn('⚠️ [AvailabilityPlugin] activeTSEsData exists but is EMPTY object {} - table may be empty or not connected')
+    } else {
+      const firstKey = activeKeys[0]
+      const firstData = activeTSEsData[firstKey]
+      console.log('🔍   - activeTSEsData first column:', firstKey, '=', firstData)
+      console.log('🔍   - activeTSEsData first column type:', typeof firstData, 'isArray:', Array.isArray(firstData))
+      if (Array.isArray(firstData)) {
+        console.log('🔍   - activeTSEsData first column length:', firstData.length)
+        if (firstData.length > 0) {
+          console.log('🔍   - activeTSEsData first column sample:', firstData.slice(0, 3))
+        } else {
+          console.warn('⚠️ [AvailabilityPlugin] activeTSEsData first column is empty array []')
+        }
+      }
+    }
+  } else {
+    console.warn('⚠️ [AvailabilityPlugin] activeTSEsData is undefined/null')
+  }
+  
+  if (awayTSEsData) {
+    const awayKeys = Object.keys(awayTSEsData)
+    console.log('🔍   - awayTSEsData keys:', awayKeys, 'count:', awayKeys.length)
+    if (awayKeys.length === 0) {
+      console.warn('⚠️ [AvailabilityPlugin] awayTSEsData exists but is EMPTY object {} - table may be empty or not connected')
+    } else {
+      const firstKey = awayKeys[0]
+      const firstData = awayTSEsData[firstKey]
+      console.log('🔍   - awayTSEsData first column:', firstKey, '=', firstData)
+      console.log('🔍   - awayTSEsData first column type:', typeof firstData, 'isArray:', Array.isArray(firstData))
+      if (Array.isArray(firstData)) {
+        console.log('🔍   - awayTSEsData first column length:', firstData.length)
+        if (firstData.length > 0) {
+          console.log('🔍   - awayTSEsData first column sample:', firstData.slice(0, 3))
+        } else {
+          console.warn('⚠️ [AvailabilityPlugin] awayTSEsData first column is empty array []')
+        }
+      }
+    }
+  } else {
+    console.warn('⚠️ [AvailabilityPlugin] awayTSEsData is undefined/null')
+  }
   
   // State to hold data from direct subscriptions
   const [directScheduleData, setDirectScheduleData] = useState<Record<string, any[]>>({})
@@ -1323,6 +1695,315 @@ export function AvailabilityPlugin() {
   
   // Store mock data in a ref so it doesn't regenerate on every render
   const mockDataRef = useRef<any[] | null>(null)
+  
+  // =================================================================
+  // INTERCOM DATA HOOK - Fetches conversations & team members from
+  // /api/intercom/conversations/open-team-5480079
+  // Same endpoint as queue-health-monitor-plugin
+  // =================================================================
+  const {
+    conversations: intercomConversations,
+    teamMembers: intercomTeamMembers,
+    loading: intercomLoading,
+    error: intercomError,
+    lastUpdated: intercomLastUpdated,
+    // refresh: refreshIntercomData, // Available for manual refresh if needed
+  } = useIntercomData({
+    skipClosed: false, // Include closed conversations to show "Closed Today" count
+    autoRefresh: true,
+    refreshInterval: 120000, // 2 minutes - matches queue-health-monitor
+  })
+  
+  // Log Intercom data status
+  useEffect(() => {
+    console.log('[AvailabilityPlugin] Intercom data status:', {
+      conversationsCount: intercomConversations.length,
+      teamMembersCount: intercomTeamMembers.length,
+      loading: intercomLoading,
+      error: intercomError,
+      lastUpdated: intercomLastUpdated?.toISOString(),
+    })
+    
+    if (intercomConversations.length > 0) {
+      const stateCounts = intercomConversations.reduce((acc, conv) => {
+        const state = (conv.state || 'unknown').toLowerCase()
+        acc[state] = (acc[state] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      console.log('[AvailabilityPlugin] Conversation states:', stateCounts)
+    }
+    
+    if (intercomTeamMembers.length > 0) {
+      console.log('[AvailabilityPlugin] Team members sample:', 
+        intercomTeamMembers.slice(0, 3).map(m => ({ id: m.id, name: m.name, email: m.email }))
+      )
+    }
+  }, [intercomConversations, intercomTeamMembers, intercomLoading, intercomError, intercomLastUpdated])
+  
+  // =================================================================
+  // TOTAL CHATS TAKEN TODAY (from Intercom data)
+  // Sum of "Chats Taken" column from TSE conversation table
+  // Matches the table's calculation logic exactly
+  // =================================================================
+  
+  // TSEs to exclude from the count (same as TSEConversationTable)
+  const EXCLUDED_TSE_NAMES = [
+    'Holly',
+    'Stephen',
+    'Grace',
+    'Zen',
+    'svc-prd-tse-intercom SVC',
+    'TSE 6519361',
+    'Zen Junior',
+  ]
+  
+  const totalChatsTakenToday = useMemo(() => {
+    console.log('[AvailabilityPlugin] Calculating totalChatsTakenToday...')
+    console.log('[AvailabilityPlugin] intercomConversations.length:', intercomConversations.length)
+    console.log('[AvailabilityPlugin] intercomTeamMembers.length:', intercomTeamMembers.length)
+    
+    if (!intercomConversations.length || !intercomTeamMembers.length) {
+      console.log('[AvailabilityPlugin] No data available, returning 0')
+      return 0
+    }
+    
+    // Helper to check if timestamp is today (PT timezone)
+    const isToday = (timestamp: number | undefined): boolean => {
+      if (!timestamp) return false
+      const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000
+      const date = new Date(timestampMs)
+      const now = new Date()
+      const ptFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
+      return ptFormatter.format(now) === ptFormatter.format(date)
+    }
+    
+    // Check if a conversation was "taken" today (created today AND has an admin reply today)
+    const isChatTakenToday = (conv: any): boolean => {
+      const createdToday = isToday(conv.created_at)
+      if (!createdToday) return false
+      
+      const adminReplyAt = conv.statistics?.first_admin_reply_at || conv.statistics?.last_admin_reply_at
+      return isToday(adminReplyAt)
+    }
+    
+    // Group by TSE and sum chats taken (matching TSEConversationTable logic)
+    const tseMap = new Map<string, { name: string, count: number }>()
+    
+    intercomConversations.forEach(conv => {
+      const assigneeId = conv.admin_assignee_id || 
+        (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
+      
+      if (!assigneeId) return
+      
+      const idStr = String(assigneeId)
+      
+      // Find team member name
+      const teamMember = intercomTeamMembers.find(m => String(m.id) === idStr)
+      const name = teamMember?.name || `TSE ${idStr}`
+      
+      // Skip excluded TSEs
+      if (EXCLUDED_TSE_NAMES.includes(name)) return
+      
+      // Initialize TSE entry if not exists
+      if (!tseMap.has(idStr)) {
+        tseMap.set(idStr, { name, count: 0 })
+      }
+      
+      // Count chats taken today
+      if (isChatTakenToday(conv)) {
+        const entry = tseMap.get(idStr)!
+        entry.count++
+      }
+    })
+    
+    // Log per-TSE counts for debugging
+    const tseCountsDebug = Array.from(tseMap.entries()).map(([id, data]) => ({
+      id,
+      name: data.name,
+      chatsTaken: data.count
+    })).filter(t => t.chatsTaken > 0)
+    console.log('[AvailabilityPlugin] Per-TSE chats taken:', tseCountsDebug)
+    
+    // Sum all chats taken across all TSEs
+    const totalCount = Array.from(tseMap.values()).reduce((sum, data) => sum + data.count, 0)
+    
+    console.log('[AvailabilityPlugin] Total chats taken today (from table data):', totalCount)
+    return totalCount
+  }, [intercomConversations, intercomTeamMembers])
+  
+  // =================================================================
+  // TOTAL CLOSED TODAY (from Intercom data)
+  // Sum of "Closed" column from TSE conversation table
+  // Matches the table's calculation logic exactly
+  // =================================================================
+  const totalClosedToday = useMemo(() => {
+    if (!intercomConversations.length || !intercomTeamMembers.length) return 0
+    
+    // Helper to check if timestamp is today (PT timezone)
+    const isToday = (timestamp: number | undefined): boolean => {
+      if (!timestamp) return false
+      const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000
+      const date = new Date(timestampMs)
+      const now = new Date()
+      const ptFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
+      return ptFormatter.format(now) === ptFormatter.format(date)
+    }
+    
+    // Check if a conversation was closed today
+    const isClosedToday = (conv: any): boolean => {
+      return conv.state === 'closed' && isToday(conv.closed_at)
+    }
+    
+    // Group by TSE and sum closed today (matching TSEConversationTable logic)
+    const tseMap = new Map<string, { name: string, count: number }>()
+    
+    intercomConversations.forEach(conv => {
+      const assigneeId = conv.admin_assignee_id || 
+        (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
+      
+      if (!assigneeId) return
+      
+      const idStr = String(assigneeId)
+      
+      // Find team member name
+      const teamMember = intercomTeamMembers.find(m => String(m.id) === idStr)
+      const name = teamMember?.name || `TSE ${idStr}`
+      
+      // Skip excluded TSEs
+      if (EXCLUDED_TSE_NAMES.includes(name)) return
+      
+      // Initialize TSE entry if not exists
+      if (!tseMap.has(idStr)) {
+        tseMap.set(idStr, { name, count: 0 })
+      }
+      
+      // Count closed today
+      if (isClosedToday(conv)) {
+        const entry = tseMap.get(idStr)!
+        entry.count++
+      }
+    })
+    
+    // Sum all closed across all TSEs
+    const totalCount = Array.from(tseMap.values()).reduce((sum, data) => sum + data.count, 0)
+    
+    console.log('[AvailabilityPlugin] Total closed today (from table data):', totalCount)
+    return totalCount
+  }, [intercomConversations, intercomTeamMembers])
+  
+  // =================================================================
+  // HISTORICAL METRICS - Fetch previous days data for trending
+  // Uses /api/response-time-metrics which stores totalConversations per day
+  // =================================================================
+  const [historicalMetrics, setHistoricalMetrics] = useState<{
+    yesterdayChats: number | null
+    weekAgoChats: number | null
+    loading: boolean
+  }>({
+    yesterdayChats: null,
+    weekAgoChats: null,
+    loading: true
+  })
+  
+  // Fetch historical metrics on mount
+  useEffect(() => {
+    const fetchHistoricalMetrics = async () => {
+      try {
+        // Get yesterday's date and a week ago date in PT timezone
+        const now = new Date()
+        const ptFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        })
+        
+        // Calculate yesterday in PT
+        const yesterday = new Date(now)
+        yesterday.setDate(yesterday.getDate() - 1)
+        const yesterdayParts = ptFormatter.format(yesterday).split('/')
+        const yesterdayDate = `${yesterdayParts[2]}-${yesterdayParts[0]}-${yesterdayParts[1]}`
+        
+        // Calculate same day last week in PT
+        const weekAgo = new Date(now)
+        weekAgo.setDate(weekAgo.getDate() - 7)
+        const weekAgoParts = ptFormatter.format(weekAgo).split('/')
+        const weekAgoDate = `${weekAgoParts[2]}-${weekAgoParts[0]}-${weekAgoParts[1]}`
+        
+        console.log('[AvailabilityPlugin] Fetching historical metrics for:', { yesterdayDate, weekAgoDate })
+        
+        // Fetch response time metrics for the last 8 days
+        const response = await fetch(
+          `https://queue-health-monitor.vercel.app/api/response-time-metrics/get?startDate=${weekAgoDate}&endDate=${yesterdayDate}`
+        )
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        
+        const data = await response.json()
+        const metrics = data.metrics || []
+        
+        console.log('[AvailabilityPlugin] Historical metrics received:', metrics.length, 'records')
+        
+        // Find yesterday's and week ago's total conversations
+        const yesterdayMetric = metrics.find((m: any) => m.date === yesterdayDate)
+        const weekAgoMetric = metrics.find((m: any) => m.date === weekAgoDate)
+        
+        setHistoricalMetrics({
+          yesterdayChats: yesterdayMetric?.totalConversations ?? null,
+          weekAgoChats: weekAgoMetric?.totalConversations ?? null,
+          loading: false
+        })
+        
+        console.log('[AvailabilityPlugin] Historical metrics parsed:', {
+          yesterdayChats: yesterdayMetric?.totalConversations,
+          weekAgoChats: weekAgoMetric?.totalConversations
+        })
+      } catch (error) {
+        console.error('[AvailabilityPlugin] Error fetching historical metrics:', error)
+        setHistoricalMetrics({
+          yesterdayChats: null,
+          weekAgoChats: null,
+          loading: false
+        })
+      }
+    }
+    
+    fetchHistoricalMetrics()
+  }, [])
+  
+  // Calculate trending data for Chats Today
+  const chatsTrending = useMemo(() => {
+    if (historicalMetrics.loading || historicalMetrics.yesterdayChats === null) {
+      return null
+    }
+    
+    const yesterdayChats = historicalMetrics.yesterdayChats
+    const todayChats = totalChatsTakenToday
+    
+    if (yesterdayChats === 0) {
+      return todayChats > 0 ? { direction: 'up' as const, percentage: 100 } : null
+    }
+    
+    const percentChange = Math.round(((todayChats - yesterdayChats) / yesterdayChats) * 100)
+    
+    return {
+      direction: percentChange >= 0 ? 'up' as const : 'down' as const,
+      percentage: Math.abs(percentChange),
+      yesterdayValue: yesterdayChats
+    }
+  }, [totalChatsTakenToday, historicalMetrics])
   
   // Format timestamp for display
   const formatLastUpdated = (date: Date): string => {
@@ -1407,14 +2088,22 @@ export function AvailabilityPlugin() {
     if (rawUnassignedConversations.length === 0) return []
 
     return rawUnassignedConversations.map(conv => {
+      // Use waiting_since for wait time calculations, fallback to created_at for filtering by date
+      const waitingSince = conv.waiting_since || conv.waitingSince
       const createdAt = conv.created_at || conv.createdAt || conv.first_opened_at
+      
+      const waitingSinceTimestamp = waitingSince
+        ? (typeof waitingSince === "number" ? (waitingSince > 1e12 ? waitingSince / 1000 : waitingSince) : new Date(waitingSince).getTime() / 1000)
+        : null
+      
       const createdTimestamp = createdAt 
         ? (typeof createdAt === "number" ? (createdAt > 1e12 ? createdAt / 1000 : createdAt) : new Date(createdAt).getTime() / 1000)
         : null
       
       return {
         ...conv,
-        createdTimestamp
+        createdTimestamp, // Keep for date filtering (10 AM UTC to 2 AM UTC)
+        waitingSinceTimestamp // Use for wait time calculations
       }
     })
   }, [unassignedConversationsData])
@@ -2455,6 +3144,157 @@ export function AvailabilityPlugin() {
     return () => clearInterval(interval)
   }, [simulateTime])
 
+  // Calculate TSE counts (updates every minute)
+  const [tseCountsMinuteTick, setTseCountsMinuteTick] = useState(0)
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTseCountsMinuteTick(prev => prev + 1)
+    }, 60000) // Update every minute (60000ms)
+    
+    return () => clearInterval(interval)
+  }, [])
+
+  const tseCounts = useMemo(() => {
+    // Calculate current UTC hour (same logic as Timeline/AgentZones)
+    const nowUTC = (
+      currentTime.getUTCHours() +
+      currentTime.getUTCMinutes() / 60 +
+      currentTime.getUTCSeconds() / 3600
+    )
+
+    // Determine active cities (same logic as Timeline/AgentZones)
+    const activeCities = cities.filter(c => {
+      // Handle endHour > 24 (cities that span midnight)
+      if (c.endHour > 24) {
+        const nextDayEndHour = c.endHour - 24
+        return nowUTC >= c.startHour || nowUTC < nextDayEndHour + 1
+      } else {
+        return nowUTC >= c.startHour && nowUTC < c.endHour + 1
+      }
+    })
+
+    // Count scheduled TSEs: Active = non-away status, Away = away status
+    let activeCount = 0
+    let awayCount = 0
+    
+    // Build a map of agent names to their status from agentsByCity
+    const agentStatusMap = new Map<string, 'away' | 'call' | 'lunch' | 'chat' | 'closing'>()
+    agentsByCity.forEach((agents) => {
+      agents.forEach(agent => {
+        if (agent.name) {
+          const cleanName = agent.name.trim().toLowerCase()
+          agentStatusMap.set(cleanName, agent.status)
+          // Also store by first name for matching
+          const firstName = cleanName.split(' ')[0]
+          if (firstName !== cleanName) {
+            agentStatusMap.set(firstName, agent.status)
+          }
+        }
+      })
+    })
+    
+    const effectiveScheduleData = Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData
+    const scheduleTSECol = config.scheduleTSE as string
+    const scheduleOOOCol = config.scheduleOOO as string
+    
+    if (effectiveScheduleData && scheduleTSECol) {
+      const tseData = effectiveScheduleData[scheduleTSECol] as string[] | undefined
+      const oooData = scheduleOOOCol && effectiveScheduleData[scheduleOOOCol] 
+        ? effectiveScheduleData[scheduleOOOCol] as string[] | undefined 
+        : undefined
+      
+      // Build set of OOO TSEs for filtering
+      const oooSet = new Set<string>()
+      if (oooData) {
+        oooData.forEach((value, idx) => {
+          if (value && String(value).toLowerCase() === 'yes') {
+            const tseName = tseData?.[idx]?.trim().toLowerCase()
+            if (tseName) {
+              oooSet.add(tseName)
+              // Also add first name for matching
+              const firstName = tseName.split(' ')[0]
+              if (firstName !== tseName) {
+                oooSet.add(firstName)
+              }
+            }
+          }
+        })
+      }
+      
+      // Get active city timezones
+      const activeTimezones = new Set(activeCities.map(c => c.timezone))
+      
+      // Count scheduled TSEs in active cities
+      if (tseData) {
+        tseData.forEach((name) => {
+          if (!name || !name.trim()) return
+          
+          const cleanName = name.trim()
+          const cleanNameLower = cleanName.toLowerCase()
+          const firstName = cleanNameLower.split(' ')[0]
+          
+          // Skip if OOO
+          if (oooSet.has(cleanNameLower) || oooSet.has(firstName)) {
+            return
+          }
+          
+          // Find team member to get timezone
+          const teamMember = TEAM_MEMBERS.find(m => 
+            m.name.toLowerCase() === cleanNameLower ||
+            m.name.toLowerCase() === firstName ||
+            cleanNameLower.startsWith(m.name.toLowerCase() + ' ') ||
+            m.name.toLowerCase().startsWith(firstName + ' ')
+          )
+          
+          // Only count if scheduled in an active city
+          if (teamMember && activeTimezones.has(teamMember.timezone)) {
+            // Get agent status
+            const agentStatus = agentStatusMap.get(cleanNameLower) || 
+                               agentStatusMap.get(firstName) ||
+                               null
+            
+            // Active = scheduled TSEs who do NOT have "away" status
+            // Away = scheduled TSEs who DO have "away" status
+            if (agentStatus === 'away') {
+              awayCount++
+            } else if (agentStatus !== null) {
+              // Has a status that's not "away" (chat, lunch, call, closing)
+              activeCount++
+            }
+            // If no status found, don't count them (they might not be in agentsByCity)
+          }
+        })
+      }
+    } else {
+      // Fallback: count agents in active cities from agentsByCity
+      activeCities.forEach(city => {
+        const agents = agentsByCity.get(city.timezone) || []
+        agents.forEach(agent => {
+          if (agent.status === 'away') {
+            awayCount++
+          } else {
+            activeCount++
+          }
+        })
+      })
+    }
+
+    return {
+      active: activeCount,
+      away: awayCount,
+    }
+  }, [
+    cities,
+    agentsByCity,
+    currentTime,
+    scheduleData,
+    directScheduleData,
+    config.scheduleTSE,
+    config.scheduleOOO,
+    tseCountsMinuteTick, // Include minuteTick to trigger recalculation every minute
+  ])
+
   // Random status updates every 10 seconds (demo mode only)
   useEffect(() => {
     if (apiUrl || sigmaData) return // Skip if using real data
@@ -2537,25 +3377,45 @@ export function AvailabilityPlugin() {
 
   return (
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
+      <IncidentBanner
+        incidentsData={incidentsData}
+        incidentsColumns={incidentsColumns}
+        incidentDetailsColumn={config.incidentDetails as string | undefined}
+        sevStatusColumn={config.incidentSevStatus as string | undefined}
+        incidentCreatedAtColumn={config.incidentCreatedAt as string | undefined}
+        incidentUpdatedAtColumn={config.incidentUpdatedAt as string | undefined}
+        chatCount={totalChatsTakenToday}
+        closedCount={totalClosedToday}
+        chatsTrending={chatsTrending}
+      />
       <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}
         <div style={{
-          width: '280px',
+          width: '400px',
           flexShrink: 0,
           position: 'sticky',
           top: '20px',
           alignSelf: 'flex-start',
           maxHeight: 'calc(100vh - 40px)',
-          overflowY: 'auto'
+          display: 'flex',
+          flexDirection: 'column',
+          marginLeft: '-20px'
         }}>
           <TSEConversationTable
-            scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
-            scheduleTSE={config.scheduleTSE as string | undefined}
+            conversationData={tseConversationData}
+            conversationColumns={tseConversationColumns}
+            tseColumn={config.tseConversationTSE as string | undefined}
+            openColumn={config.tseConversationOpen as string | undefined}
+            snoozedColumn={config.tseConversationSnoozed as string | undefined}
+            closedColumn={config.tseConversationClosed as string | undefined}
+            intercomConversations={intercomConversations}
+            intercomTeamMembers={intercomTeamMembers}
+            lastUpdated={intercomLastUpdated}
           />
         </div>
 
         {/* Main content area */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
           <div className="timeline-section">
             <div style={{ marginBottom: '8px', position: 'relative' }}>
               <div style={{
@@ -2571,8 +3431,8 @@ export function AvailabilityPlugin() {
             </div>
             <ResoQueueBelt unassignedConvs={unassignedConvs} />
 
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
+              <div style={{ flex: 1, width: '100%', minWidth: 0 }}>
                 <Timeline
                   cities={cities}
                   currentTime={currentTime}
@@ -2585,19 +3445,65 @@ export function AvailabilityPlugin() {
                   currentTime={currentTime}
                 />
               </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <FallbackGauge
-                  cities={cities}
-                  agentsByCity={agentsByCity}
-                  scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
-                  scheduleTSE={config.scheduleTSE as string | undefined}
-                  scheduleOOO={config.scheduleOOO as string | undefined}
-                />
-              </div>
             </div>
 
             {showLegend && <Legend />}
+          </div>
+        </div>
+
+        {/* Right sidebar with Fallback Schedule Risk */}
+        <div style={{
+          width: '360px',
+          flexShrink: 0,
+          position: 'sticky',
+          top: '20px',
+          alignSelf: 'flex-start',
+          maxHeight: 'calc(100vh - 40px)',
+          display: 'flex',
+          flexDirection: 'column',
+          marginRight: '-20px'
+        }}>
+          {/* TSE Status Counts */}
+          {(tseCounts.active !== undefined || tseCounts.away !== undefined) && (
+            <div className="tse-status-sidebar-counts">
+              {tseCounts.active !== undefined && (
+                <div className="tse-status-sidebar-stat">
+                  <div className="tse-status-sidebar-value tse-status-active">
+                    {tseCounts.active}
+                  </div>
+                  <div className="tse-status-sidebar-label">ACTIVE</div>
+                </div>
+              )}
+              {tseCounts.away !== undefined && (
+                <div className="tse-status-sidebar-stat">
+                  <div className="tse-status-sidebar-value tse-status-away">
+                    {tseCounts.away}
+                  </div>
+                  <div className="tse-status-sidebar-label">Away</div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Combined container for Fallback Gauge, OOO, and Office Hours */}
+          <div className="sidebar-components-container">
+            <OOOProfilePictures
+              oooData={Object.keys(directOooData).length > 0 ? directOooData : oooData}
+              oooTSEColumn={config.oooTSE as string | undefined}
+              oooStatusColumn={config.oooStatus as string | undefined}
+            />
+            <FallbackGauge
+              cities={cities}
+              agentsByCity={agentsByCity}
+              scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
+              scheduleTSE={config.scheduleTSE as string | undefined}
+              scheduleOOO={config.scheduleOOO as string | undefined}
+            />
+            <OfficeHours
+              officeHoursData={officeHoursData}
+              tseTopicTimeColumn={config.officeHoursTseTopicTime as string | undefined}
+              statusColumn={config.officeHoursStatus as string | undefined}
+            />
           </div>
         </div>
       </div>
