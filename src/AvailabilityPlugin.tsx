@@ -3058,8 +3058,7 @@ export function AvailabilityPlugin() {
         }
       })
     })
-    // Return actual count, or minimum of 2 for demo purposes
-    return Math.max(count, 2)
+    return count
   }, [agentsByCity])
 
   // Extract OOO agents when schedule data is available
