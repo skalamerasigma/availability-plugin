@@ -1,9 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 
 interface TrendingData {
   direction: 'up' | 'down'
   percentage: number
   yesterdayValue?: number
+}
+
+interface OnCallPerson {
+  name: string
+  email?: string
+  scheduleName: string
+  scheduleType: 'escalations' | 'incidents'
+  endAt?: string
 }
 
 interface IncidentBannerProps {
@@ -42,6 +50,36 @@ export function IncidentBanner({
   previousClosed,
 }: IncidentBannerProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [onCallData, setOnCallData] = useState<OnCallPerson[]>([])
+
+  // Fetch on-call data from Incident.io
+  const fetchOnCallData = useCallback(async () => {
+    try {
+      const response = await fetch('https://queue-health-monitor.vercel.app/api/incident-io/on-call')
+      if (!response.ok) {
+        console.error('[IncidentBanner] Failed to fetch on-call data:', response.status)
+        return
+      }
+      const data = await response.json()
+      console.log('[IncidentBanner] On-call data:', data)
+      setOnCallData(data.onCall || [])
+    } catch (error) {
+      console.error('[IncidentBanner] Error fetching on-call data:', error)
+    }
+  }, [])
+
+  // Fetch on-call data on mount and every 5 minutes
+  useEffect(() => {
+    fetchOnCallData()
+    const interval = setInterval(fetchOnCallData, 5 * 60 * 1000) // 5 minutes
+    return () => clearInterval(interval)
+  }, [fetchOnCallData])
+
+  // Get first name from full name
+  const getFirstName = (fullName: string): string => {
+    if (!fullName) return fullName
+    return fullName.split(' ')[0]
+  }
 
   // Process incidents (data is already filtered by date range in the source)
   const activeIncidents = useMemo(() => {
@@ -355,6 +393,23 @@ export function IncidentBanner({
               alt="Incident.io"
             />
           </div>
+
+          {/* On-Call Display */}
+          {onCallData.length > 0 && (
+            <div className="on-call-section">
+              <div className="on-call-label">On-Call</div>
+              <div className="on-call-people">
+                {onCallData.map((person, idx) => (
+                  <div key={idx} className="on-call-person">
+                    <span className="on-call-name">{getFirstName(person.name)}</span>
+                    <span className="on-call-type">
+                      {person.scheduleType === 'escalations' ? 'Esc' : 'Inc'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Incident Info */}
           <div className="incident-banner-details">

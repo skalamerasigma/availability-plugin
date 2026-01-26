@@ -1413,3 +1413,52 @@ body {
   border-radius: 8px;
   border: 1px dashed #e5e7eb;
 }
+
+/* =============================================
+   On-Call Section Styles
+   ============================================= */
+
+.on-call-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 16px;
+  border-left: 1px solid #e5e7eb;
+  margin-left: 8px;
+}
+
+.on-call-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.on-call-people {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.on-call-person {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.on-call-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.on-call-type {
+  font-size: 9px;
+  font-weight: 600;
+  color: #fff;
+  background: #6366f1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
