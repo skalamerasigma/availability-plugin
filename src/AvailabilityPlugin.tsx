@@ -1920,32 +1920,11 @@ export function AvailabilityPlugin() {
   useEffect(() => {
     const fetchHistoricalMetrics = async () => {
       try {
-        // Get yesterday's date and a week ago date in PT timezone
-        const now = new Date()
-        const ptFormatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'America/Los_Angeles',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        })
+        console.log('[AvailabilityPlugin] Fetching historical metrics...')
         
-        // Calculate yesterday in PT
-        const yesterday = new Date(now)
-        yesterday.setDate(yesterday.getDate() - 1)
-        const yesterdayParts = ptFormatter.format(yesterday).split('/')
-        const yesterdayDate = `${yesterdayParts[2]}-${yesterdayParts[0]}-${yesterdayParts[1]}`
-        
-        // Calculate same day last week in PT
-        const weekAgo = new Date(now)
-        weekAgo.setDate(weekAgo.getDate() - 7)
-        const weekAgoParts = ptFormatter.format(weekAgo).split('/')
-        const weekAgoDate = `${weekAgoParts[2]}-${weekAgoParts[0]}-${weekAgoParts[1]}`
-        
-        console.log('[AvailabilityPlugin] Fetching historical metrics for:', { yesterdayDate, weekAgoDate })
-        
-        // Fetch response time metrics for the last 8 days
+        // Fetch all recent metrics and use the most recent one
         const response = await fetch(
-          `https://queue-health-monitor.vercel.app/api/response-time-metrics/get?startDate=${weekAgoDate}&endDate=${yesterdayDate}`
+          `https://queue-health-monitor.vercel.app/api/response-time-metrics/get?all=true`
         )
         
         if (!response.ok) {
@@ -1957,20 +1936,28 @@ export function AvailabilityPlugin() {
         
         console.log('[AvailabilityPlugin] Historical metrics received:', metrics.length, 'records')
         
-        // Find yesterday's and week ago's total conversations
-        const yesterdayMetric = metrics.find((m: any) => m.date === yesterdayDate)
-        const weekAgoMetric = metrics.find((m: any) => m.date === weekAgoDate)
-        
-        setHistoricalMetrics({
-          yesterdayChats: yesterdayMetric?.totalConversations ?? null,
-          weekAgoChats: weekAgoMetric?.totalConversations ?? null,
-          loading: false
-        })
-        
-        console.log('[AvailabilityPlugin] Historical metrics parsed:', {
-          yesterdayChats: yesterdayMetric?.totalConversations,
-          weekAgoChats: weekAgoMetric?.totalConversations
-        })
+        if (metrics.length > 0) {
+          // Metrics are ordered by date DESC, so first one is most recent
+          const mostRecentMetric = metrics[0]
+          
+          console.log('[AvailabilityPlugin] Most recent metric:', {
+            date: mostRecentMetric.date,
+            totalConversations: mostRecentMetric.totalConversations
+          })
+          
+          setHistoricalMetrics({
+            yesterdayChats: mostRecentMetric.totalConversations ?? null,
+            weekAgoChats: metrics.length > 7 ? metrics[7]?.totalConversations ?? null : null,
+            loading: false
+          })
+        } else {
+          console.log('[AvailabilityPlugin] No historical metrics available')
+          setHistoricalMetrics({
+            yesterdayChats: null,
+            weekAgoChats: null,
+            loading: false
+          })
+        }
       } catch (error) {
         console.error('[AvailabilityPlugin] Error fetching historical metrics:', error)
         setHistoricalMetrics({

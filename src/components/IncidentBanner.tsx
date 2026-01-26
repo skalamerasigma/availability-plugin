@@ -319,7 +319,7 @@ export function IncidentBanner({
                   <div className="tse-status-banner-label">Chats Today</div>
                   {chatsTrending?.yesterdayValue !== undefined && (
                     <div className="tse-status-banner-yesterday">
-                      {chatsTrending.yesterdayValue} yesterday
+                      {chatsTrending.yesterdayValue} prev day
                     </div>
                   )}
                 </div>
