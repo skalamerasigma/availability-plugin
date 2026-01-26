@@ -26,6 +26,7 @@ interface IncidentBannerProps {
   chatsTrending?: TrendingData | null
   previousClosed?: number | null
   zoomCallCount?: number
+  medianResponseTime?: number | null
 }
 
 interface Incident {
@@ -51,6 +52,7 @@ export function IncidentBanner({
   chatsTrending,
   previousClosed,
   zoomCallCount,
+  medianResponseTime,
 }: IncidentBannerProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [onCallData, setOnCallData] = useState<OnCallPerson[]>([])
@@ -82,6 +84,19 @@ export function IncidentBanner({
   const getFirstName = (fullName: string): string => {
     if (!fullName) return fullName
     return fullName.split(' ')[0]
+  }
+
+  // Format response time in seconds to human-readable format
+  const formatResponseTime = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds}s`
+    }
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    if (remainingSeconds === 0) {
+      return `${minutes}m`
+    }
+    return `${minutes}m ${remainingSeconds}s`
   }
 
   // Process incidents (data is already filtered by date range in the source)
@@ -395,6 +410,19 @@ export function IncidentBanner({
                 )}
               </div>
               <div className="zoom-label">On Zoom</div>
+            </div>
+          </>
+        )}
+
+        {/* Median Response Time */}
+        {medianResponseTime !== undefined && medianResponseTime !== null && (
+          <>
+            <div className="incident-banner-divider"></div>
+            <div className="response-time-section">
+              <div className="response-time-value">
+                {formatResponseTime(medianResponseTime)}
+              </div>
+              <div className="response-time-label">Median Response</div>
             </div>
           </>
         )}

@@ -1502,6 +1502,34 @@ body {
 }
 
 /* =============================================
+   Response Time Section Styles
+   ============================================= */
+
+.response-time-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px;
+}
+
+.response-time-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: #10b981;
+  line-height: 1;
+}
+
+.response-time-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+/* =============================================
    On-Call Section Styles
    ============================================= */
 
@@ -1551,50 +1579,65 @@ body {
 }
 
 /* =============================================
-   Bubble Explosion Animation
+   Bubble Explosion Animation (GIF-based)
+   ============================================= */
+/* Explosion effect now uses GIF image instead of CSS animations */
+
+/* =============================================
+   Bubble Fly Away Animation (Success)
    ============================================= */
 
-@keyframes bubble-pop {
+@keyframes fly-away {
   0% {
-    transform: scale(1);
+    transform: translate(50%, -50%) scale(1);
     opacity: 1;
   }
-  20% {
-    transform: scale(1.3);
+  15% {
+    transform: translate(50%, -60%) scale(1.15);
     opacity: 1;
   }
   100% {
-    transform: scale(0);
+    transform: translate(50%, -350%) scale(0.5);
     opacity: 0;
   }
 }
 
-@keyframes particle-burst {
+.bubble-flying-away {
+  will-change: transform, opacity;
+}
+
+.trail-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.trail-particle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  animation: trail-fade 1.5s ease-out forwards;
+}
+
+@keyframes trail-fade {
   0% {
-    transform: translate(-50%, -50%) scale(0);
-    opacity: 1;
-  }
-  50% {
-    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.8;
   }
   100% {
-    transform: translate(-50%, -50%) translateY(-80px) scale(1.5);
+    transform: translate(-50%, 100px) scale(0.2);
     opacity: 0;
   }
 }
 
-.bubble-exploding {
-  animation: bubble-shake 0.1s ease-in-out 3;
-}
-
-@keyframes bubble-shake {
-  0%, 100% {
-    transform: translate(50%, -50%) rotate(0deg);
-  }
-  25% {
-    transform: translate(50%, -50%) rotate(-5deg);
-  }
-  75% {
-    transform: translate(50%, -50%) rotate(5deg);
-  }
-}
+/* Stagger trail particles horizontally */
+.trail-particle:nth-child(1) { left: 0; }
+.trail-particle:nth-child(2) { left: -15px; }
+.trail-particle:nth-child(3) { left: 15px; }
+.trail-particle:nth-child(4) { left: -8px; }
+.trail-particle:nth-child(5) { left: 8px; }

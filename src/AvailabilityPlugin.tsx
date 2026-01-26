@@ -498,12 +498,16 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
   const [showBreachedModal, setShowBreachedModal] = useState(false)
   const [selectedConversation, setSelectedConversation] = useState<any | null>(null)
   const [explodingIds, setExplodingIds] = useState<Set<string>>(new Set())
+  const [flyingAwayIds, setFlyingAwayIds] = useState<Set<string>>(new Set())
+  const [flyingAwayData, setFlyingAwayData] = useState<Map<string, { progress: number, staggerOffset: number }>>(new Map())
   const confirmedBreachedIdsRef = useRef<Set<string>>(new Set())
   const removedIdsRef = useRef<Set<string>>(new Set())
   const checkedIdsRef = useRef<Set<string>>(new Set())
   const checkingIdsRef = useRef<Set<string>>(new Set())
   const lastResetRef = useRef<number | null>(null)
   const previousBreachedIdsRef = useRef<Set<string>>(new Set())
+  const previousUnassignedIdsRef = useRef<Set<string>>(new Set())
+  const conversationDataRef = useRef<Map<string, { progress: number, staggerOffset: number }>>(new Map())
   const assignmentStatusEndpoint = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/assignment-status'
 
   // Update current time every second for conveyor belt animation
@@ -614,16 +618,16 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
         if (isUnassigned) {
           // Check if this is a newly breached conversation
           if (!confirmedBreachedIdsRef.current.has(conversationId) && !previousBreachedIdsRef.current.has(conversationId)) {
-            // Trigger explosion animation
+            // Trigger explosion GIF
             setExplodingIds(prev => new Set(prev).add(conversationId))
-            // Remove from exploding after animation completes (800ms)
+            // Remove from exploding after GIF plays (1 second)
             setTimeout(() => {
               setExplodingIds(prev => {
                 const next = new Set(prev)
                 next.delete(conversationId)
                 return next
               })
-            }, 800)
+            }, 1000)
           }
           confirmedBreachedIdsRef.current.add(conversationId)
           previousBreachedIdsRef.current.add(conversationId)
@@ -698,16 +702,16 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
       if (elapsedSeconds >= 600) {
         // Check if this is a newly breached conversation
         if (!confirmedBreachedIdsRef.current.has(convId) && !previousBreachedIdsRef.current.has(convId)) {
-          // Trigger explosion animation
+          // Trigger explosion GIF
           setExplodingIds(prev => new Set(prev).add(convId))
-          // Remove from exploding after animation completes (800ms)
+          // Remove from exploding after GIF plays (1 second)
           setTimeout(() => {
             setExplodingIds(prev => {
               const next = new Set(prev)
               next.delete(convId)
               return next
             })
-          }, 800)
+          }, 1000)
         }
         // Mark as breached
         confirmedBreachedIdsRef.current.add(convId)
@@ -719,6 +723,80 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
       }
     })
   }, [unassignedConvs, conveyorBeltCurrentTime])
+
+  // Detect when conversations get assigned (disappear from queue before 10 min mark)
+  // Triggers fly-away animation for successfully assigned conversations
+  useEffect(() => {
+    const currentIds = new Set<string>()
+    
+    // Build set of current conversation IDs and store their position data
+    unassignedConvs.forEach((conv) => {
+      const convId = conv.id || conv.conversation_id
+      if (!convId) return
+      
+      currentIds.add(String(convId))
+      
+      // Calculate and store current progress for potential fly-away animation
+      const createdTimestamp = conv.createdTimestamp
+      if (createdTimestamp) {
+        const waitingSinceTimestamp = conv.waitingSinceTimestamp || conv.waiting_since
+          ? (typeof conv.waiting_since === "number" 
+              ? (conv.waiting_since > 1e12 ? conv.waiting_since / 1000 : conv.waiting_since)
+              : (conv.waitingSinceTimestamp || (conv.waiting_since ? new Date(conv.waiting_since).getTime() / 1000 : null)))
+          : null
+        const waitStartTimestamp = waitingSinceTimestamp || createdTimestamp
+        const elapsedSeconds = conveyorBeltCurrentTime - waitStartTimestamp
+        const progressPercent = Math.min((elapsedSeconds / 600) * 100, 100)
+        // Use conversation ID to determine stable offset (consistent with rendering)
+        const idHash = String(convId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+        const staggerOffset = (idHash % 3 === 0) ? 0 : (idHash % 3 === 1) ? -25 : 25
+        
+        conversationDataRef.current.set(String(convId), { progress: progressPercent, staggerOffset })
+      }
+    })
+    
+    // Check for conversations that were in previous list but not in current (assigned!)
+    previousUnassignedIdsRef.current.forEach(prevId => {
+      // Skip if still in current list
+      if (currentIds.has(prevId)) return
+      // Skip if already flying away or exploding
+      if (flyingAwayIds.has(prevId)) return
+      if (explodingIds.has(prevId)) return
+      // Skip if it was breached (explosion handles this)
+      if (confirmedBreachedIdsRef.current.has(prevId)) return
+      if (previousBreachedIdsRef.current.has(prevId)) return
+      // Skip if already removed
+      if (removedIdsRef.current.has(prevId)) return
+      
+      // This conversation was assigned before breaching! Trigger fly-away
+      const savedData = conversationDataRef.current.get(prevId)
+      if (savedData && savedData.progress < 100) {
+        console.log('[Reso Queue] Conversation assigned, triggering fly-away:', prevId)
+        
+        // Store the position data for animation
+        setFlyingAwayData(prev => new Map(prev).set(prevId, savedData))
+        setFlyingAwayIds(prev => new Set(prev).add(prevId))
+        
+        // Remove after animation completes (1.5s)
+        setTimeout(() => {
+          setFlyingAwayIds(prev => {
+            const next = new Set(prev)
+            next.delete(prevId)
+            return next
+          })
+          setFlyingAwayData(prev => {
+            const next = new Map(prev)
+            next.delete(prevId)
+            return next
+          })
+          removedIdsRef.current.add(prevId)
+        }, 1500)
+      }
+    })
+    
+    // Update previous IDs for next comparison
+    previousUnassignedIdsRef.current = currentIds
+  }, [unassignedConvs, conveyorBeltCurrentTime, flyingAwayIds, explodingIds])
 
   return (
     <>
@@ -970,8 +1048,9 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
             const secsRemaining = secondsRemaining % 60
             
             // Stagger bubbles vertically to avoid overlap
-            // Alternate between up and down offsets based on index
-            const staggerOffset = (index % 3 === 0) ? 0 : (index % 3 === 1) ? -25 : 25
+            // Use conversation ID to determine stable offset (doesn't change when other bubbles are removed)
+            const idHash = String(convId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+            const staggerOffset = (idHash % 3 === 0) ? 0 : (idHash % 3 === 1) ? -25 : 25
             
             // Determine which SVG to use based on breach status and progress
             // Green: more than 7 minutes remaining (< 30% progress)
@@ -999,7 +1078,6 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
               <div
                 key={convId}
                 onClick={() => !isExploding && setSelectedConversation(conv)}
-                className={isExploding ? 'bubble-exploding' : ''}
                 style={{
                   position: 'absolute',
                   // Position using right offset - starts far right, moves toward 10 min marker (110px from right)
@@ -1007,11 +1085,8 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                   // At 100% progress: right = 110px (at 10 min marker)
                   right: `calc(110px + (100% - 120px) * ${(100 - Math.min(progressPercent, 100)) / 100})`,
                   top: `calc(50% + ${staggerOffset}px)`,
-                  transform: isExploding ? 'translate(50%, -50%) scale(0)' : 'translate(50%, -50%)',
-                  transition: isExploding 
-                    ? 'transform 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55), opacity 0.6s ease-out' 
-                    : 'right 1s linear, top 0.3s ease, z-index 0s',
-                  opacity: isExploding ? 0 : 1,
+                  transform: 'translate(50%, -50%)',
+                  transition: 'right 1s linear, top 0.3s ease, z-index 0s',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -1038,34 +1113,6 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                 }}
                 title={`Conversation ${convId} - ${isBreached ? 'BREACHED' : (isPendingBreachCheck ? 'Pending breach check' : `${minutesRemaining}m ${secsRemaining}s until breach`)}`}
               >
-                {/* Explosion particles */}
-                {isExploding && (
-                  <div style={{
-                    position: 'absolute',
-                    width: '100%',
-                    height: '100%',
-                    pointerEvents: 'none'
-                  }}>
-                    {[...Array(8)].map((_, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          position: 'absolute',
-                          width: '12px',
-                          height: '12px',
-                          borderRadius: '50%',
-                          background: i % 2 === 0 ? '#ef4444' : '#f97316',
-                          top: '50%',
-                          left: '50%',
-                          transform: `translate(-50%, -50%) rotate(${i * 45}deg) translateY(-60px)`,
-                          animation: `particle-burst 0.6s ease-out forwards`,
-                          animationDelay: `${i * 0.02}s`,
-                          opacity: 0
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
                 <div style={{
                   position: 'relative',
                   width: '80px',
@@ -1074,38 +1121,136 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                   alignItems: 'center',
                   justifyContent: 'center',
                   outline: 'none',
-                  border: 'none',
-                  animation: isExploding ? 'bubble-pop 0.6s ease-out forwards' : 'none'
+                  border: 'none'
+                }}>
+                  {isExploding ? (
+                    // Explosion GIF
+                    <img 
+                      src="https://res.cloudinary.com/doznvxtja/image/upload/v1769461711/huddle_logo_ahdn5q.gif"
+                      alt="Explosion"
+                      style={{
+                        width: '120px',
+                        height: '120px',
+                        objectFit: 'contain',
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        outline: 'none',
+                        border: 'none'
+                      }}
+                    />
+                  ) : (
+                    // Normal chat bubble
+                    <>
+                      <img 
+                        src={svgUrl}
+                        alt="Chat status"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          outline: 'none',
+                          border: 'none'
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#000000',
+                        textAlign: 'center',
+                        lineHeight: '1.2',
+                        whiteSpace: 'nowrap',
+                        textShadow: '0 1px 2px rgba(255,255,255,0.8)',
+                        zIndex: 1
+                      }}>
+                        {timerText}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          
+          {/* Flying Away Bubbles - Successfully assigned conversations */}
+          {Array.from(flyingAwayIds).map((convId) => {
+            const data = flyingAwayData.get(convId)
+            if (!data) return null
+            
+            const { progress, staggerOffset } = data
+            
+            // Use green SVG for successfully assigned
+            const svgUrl = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769161765/huddle_logo_1_xlram0.svg'
+            
+            return (
+              <div
+                key={`flying-${convId}`}
+                className="bubble-flying-away"
+                style={{
+                  position: 'absolute',
+                  right: `calc(110px + (100% - 120px) * ${(100 - Math.min(progress, 100)) / 100})`,
+                  top: `calc(50% + ${staggerOffset}px)`,
+                  transform: 'translate(50%, -50%)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 300,
+                  pointerEvents: 'none',
+                  animation: 'fly-away 1.5s ease-out forwards'
+                }}
+              >
+                {/* Trail particles */}
+                <div className="trail-container">
+                  {[...Array(5)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="trail-particle"
+                      style={{
+                        animationDelay: `${i * 0.08}s`,
+                        opacity: 1 - (i * 0.2)
+                      }}
+                    />
+                  ))}
+                </div>
+                <div style={{
+                  position: 'relative',
+                  width: '80px',
+                  height: '80px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
                 }}>
                   <img 
                     src={svgUrl}
-                    alt="Chat status"
+                    alt="Assigned"
                     style={{
                       width: '100%',
                       height: '100%',
                       objectFit: 'contain',
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      outline: 'none',
-                      border: 'none'
+                      filter: 'drop-shadow(0 0 8px rgba(16, 185, 129, 0.6))'
                     }}
                   />
+                  {/* Checkmark overlay */}
                   <div style={{
                     position: 'absolute',
                     top: '50%',
                     left: '50%',
                     transform: 'translate(-50%, -50%)',
-                    fontSize: '12px',
+                    fontSize: '20px',
                     fontWeight: 700,
-                    color: '#000000',
-                    textAlign: 'center',
-                    lineHeight: '1.2',
-                    whiteSpace: 'nowrap',
-                    textShadow: '0 1px 2px rgba(255,255,255,0.8)',
-                    zIndex: 1
+                    color: '#10b981',
+                    textShadow: '0 0 4px rgba(255,255,255,0.9)'
                   }}>
-                    {timerText}
+                    ✓
                   </div>
                 </div>
               </div>
@@ -1570,7 +1715,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 8.11 - Added dedicated OOO view support for filtering TSEs who are OOO')
+  console.log('🚀 PLUGIN VERSION: 8.12 - Added median response time metric + fly-away animation')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
@@ -1762,6 +1907,63 @@ export function AvailabilityPlugin() {
   // Store mock data in a ref so it doesn't regenerate on every render
   const mockDataRef = useRef<any[] | null>(null)
   
+  // Track "assigned" mock conversations for local testing of fly-away animation
+  const [assignedMockIds, setAssignedMockIds] = useState<Set<string>>(new Set())
+  
+  // Track assigned mock IDs in a ref to avoid dependency issues
+  const assignedMockIdsRef = useRef<Set<string>>(new Set())
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    assignedMockIdsRef.current = assignedMockIds
+  }, [assignedMockIds])
+  
+  // Periodically "assign" mock conversations to test fly-away animation (localhost only)
+  useEffect(() => {
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+    )
+    
+    if (!isLocalhost) return
+    
+    // Assign a random mock conversation every 5 seconds
+    const assignRandomMock = () => {
+      if (!mockDataRef.current) return
+      
+      // Find mock conversations that haven't been assigned yet and aren't breached
+      const availableMocks = mockDataRef.current.filter(conv => {
+        const convId = conv.id
+        if (!convId) return false
+        if (assignedMockIdsRef.current.has(convId)) return false
+        
+        // Check if it would be breached (over 10 min)
+        const waitingSince = conv.waiting_since || conv.created_at
+        const elapsed = (Date.now() / 1000) - waitingSince
+        // Only assign if under 9 minutes (give time for animation before breach)
+        return elapsed < 540
+      })
+      
+      if (availableMocks.length === 0) return
+      
+      // Pick a random one to "assign"
+      const randomIndex = Math.floor(Math.random() * availableMocks.length)
+      const toAssign = availableMocks[randomIndex]
+      
+      console.log('[Mock] Assigned conversation:', toAssign.id)
+      setAssignedMockIds(prev => new Set(prev).add(toAssign.id))
+    }
+    
+    // First assignment after 3 seconds, then every 5 seconds
+    const initialTimeout = setTimeout(assignRandomMock, 3000)
+    const interval = setInterval(assignRandomMock, 5000)
+    
+    return () => {
+      clearTimeout(initialTimeout)
+      clearInterval(interval)
+    }
+  }, []) // Empty dependency - only run once on mount
+  
   // =================================================================
   // INTERCOM DATA HOOK - Fetches conversations & team members from
   // /api/intercom/conversations/open-team-5480079
@@ -1778,6 +1980,15 @@ export function AvailabilityPlugin() {
     skipClosed: false, // Include closed conversations to show "Closed Today" count
     autoRefresh: true,
     refreshInterval: 120000, // 2 minutes - matches queue-health-monitor
+  })
+  
+  // Debug: Log when Intercom data changes
+  console.log('🔴 [Intercom Hook] Data received:', {
+    conversationsCount: intercomConversations.length,
+    teamMembersCount: intercomTeamMembers.length,
+    loading: intercomLoading,
+    error: intercomError,
+    hasData: intercomConversations.length > 0
   })
   
   // Log Intercom data status
@@ -1941,6 +2152,86 @@ export function AvailabilityPlugin() {
     
     console.log('[AvailabilityPlugin] Total closed today (all conversations):', closedCount)
     return closedCount
+  }, [intercomConversations])
+  
+  // =================================================================
+  // MEDIAN INITIAL RESPONSE TIME (from Intercom data)
+  // Calculates the median time from conversation created to first admin reply
+  // Only considers conversations with both created_at and first_admin_reply_at
+  // =================================================================
+  const medianResponseTime = useMemo(() => {
+    if (!intercomConversations.length) return null
+    
+    // Helper to check if timestamp is today (PT timezone)
+    const isToday = (timestamp: number | undefined): boolean => {
+      if (!timestamp) return false
+      const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000
+      const date = new Date(timestampMs)
+      const now = new Date()
+      const ptFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
+      return ptFormatter.format(now) === ptFormatter.format(date)
+    }
+    
+    // Collect response times for all conversations created today that have first admin reply
+    const responseTimes: number[] = []
+    let debugCounts = { total: 0, createdToday: 0, hasReply: 0, validTime: 0 }
+    
+    intercomConversations.forEach(conv => {
+      debugCounts.total++
+      const createdAt = conv.created_at
+      const firstAdminReplyAt = conv.statistics?.first_admin_reply_at
+      
+      // Only consider conversations created today
+      if (!createdAt || !isToday(createdAt)) return
+      debugCounts.createdToday++
+      
+      // Must have first admin reply timestamp
+      if (!firstAdminReplyAt) return
+      debugCounts.hasReply++
+      
+      // Calculate response time in seconds
+      const responseTimeSeconds = firstAdminReplyAt - createdAt
+      
+      // Sanity check: response time should be positive and reasonable (< 24 hours)
+      if (responseTimeSeconds > 0 && responseTimeSeconds < 86400) {
+        debugCounts.validTime++
+        responseTimes.push(responseTimeSeconds)
+      }
+    })
+    
+    console.log('[AvailabilityPlugin] Median response time debug:', debugCounts)
+    console.log('[AvailabilityPlugin] Response times collected:', responseTimes.length)
+    
+    // Debug: Log sample conversations to see if they have statistics
+    if (intercomConversations.length > 0) {
+      const sample = intercomConversations.slice(0, 3).map(c => ({
+        id: c.id,
+        created_at: c.created_at,
+        state: c.state,
+        hasStatistics: !!c.statistics,
+        first_admin_reply_at: c.statistics?.first_admin_reply_at
+      }))
+      console.log('[AvailabilityPlugin] Sample conversations:', sample)
+    }
+    
+    if (responseTimes.length === 0) return null
+    
+    // Sort the response times
+    responseTimes.sort((a, b) => a - b)
+    
+    // Calculate median
+    const mid = Math.floor(responseTimes.length / 2)
+    const median = responseTimes.length % 2 === 0
+      ? (responseTimes[mid - 1] + responseTimes[mid]) / 2
+      : responseTimes[mid]
+    
+    console.log('[AvailabilityPlugin] Median response time:', Math.round(median), 'seconds')
+    return Math.round(median)
   }, [intercomConversations])
   
   // =================================================================
@@ -2136,7 +2427,10 @@ export function AvailabilityPlugin() {
       if (!mockDataRef.current) {
         mockDataRef.current = getMockUnassignedConversations(Date.now() / 1000)
       }
-      rawUnassignedConversations = mockDataRef.current
+      // Filter out "assigned" mock conversations to trigger fly-away animation
+      rawUnassignedConversations = mockDataRef.current.filter(conv => 
+        !assignedMockIds.has(conv.id)
+      )
     } else if (unassignedConversationsData?.length) {
       rawUnassignedConversations = unassignedConversationsData
     } else {
@@ -2164,7 +2458,7 @@ export function AvailabilityPlugin() {
         waitingSinceTimestamp // Use for wait time calculations
       }
     })
-  }, [unassignedConversationsData])
+  }, [unassignedConversationsData, assignedMockIds])
   
   // Subscribe directly to element data using client API
   useEffect(() => {
@@ -3465,6 +3759,7 @@ export function AvailabilityPlugin() {
         chatsTrending={chatsTrending}
         previousClosed={historicalMetrics.yesterdayClosed}
         zoomCallCount={zoomCallCount}
+        medianResponseTime={medianResponseTime}
       />
       <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}
