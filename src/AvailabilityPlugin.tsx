@@ -1748,11 +1748,11 @@ export function AvailabilityPlugin() {
   
   // TSEs to exclude from the count (same as TSEConversationTable)
   const EXCLUDED_TSE_NAMES = [
-    'Holly',
     'Stephen',
     'Grace',
     'Zen',
     'Chetana',
+    'Chetana Shinde',
     'svc-prd-tse-intercom SVC',
     'TSE 6519361',
     'Zen Junior',
