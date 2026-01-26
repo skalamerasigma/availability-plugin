@@ -1,0 +1,1269 @@
+View Row Id,Last Updated At,Incident Id,Incident Reference,Incident Name,Incident Summary,Incident Permalink,Incident Call Url,Incident Mode,Incident Visibility,Status Name,[Status Name],Status Category,Status Description,Severity Name,Sev Name,Severity Rank,Incident Type Name,Incident Type Description,Slack Team Id,Slack Channel Id,Slack Channel Name,Incident Created At,Incident Updated At,Workload Minutes Total,Workload Minutes Working,Workload Minutes Late,Workload Minutes Sleeping,Incident Timestamp Values,Duration Metrics,Incident Role Assignments,Custom Field Entries,Incident Details_FULL,Calc,INCIDENT DETAILS,SEV-STATUS
+7B49D75D61184FB0BFDB47E5EC67AC5B,07:45 AM,01KF1RPV989P8J7TZZVTNHAZ1T,INC-290,BY getting 503 errors from /v2/grants endpoint,,https://app.incident.io/sigmacomputing/incidents/01KF1RPV989P8J7TZZVTNHAZ1T,https://sigmacomputing.zoom.us/j/93033996768?pwd=huBEDVBWDGeb8GmJucM7nzsGYSPCqh.1,standard,public,In Progress,[In Progress],live,"We've spotted that something is wrong, and we are in the process of understanding why and mitigating",SEV 1,𝗦𝗘𝗩 𝟏,1,Engineering,"This is the standard SEV type that will engage the Engineering team (Global On Call), along with the Support Team and IM if needed. ",T02NLKT1F,C0A8XSJ4J4V,incident-290,2026-01-15 13:24:13,2026-01-16 15:25:24,801.2,751.8,49.4,0.0,"[
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39SV6ZYJSZ5DYV2HYC4"",
+      ""name"": ""Declared at"",
+      ""rank"": 0
+    },
+    ""value"": {
+      ""value"": ""2026-01-15T21:24:13.292Z""
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39S56BQB482AA8T76BG"",
+      ""name"": ""Accepted at"",
+      ""rank"": 1
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39SBNWKPATWMVMZABZF"",
+      ""name"": ""Declined at"",
+      ""rank"": 2
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39SMS2TA5SSN6P538M1"",
+      ""name"": ""Merged at"",
+      ""rank"": 3
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39S2EBQ06NY4VVQR2BE"",
+      ""name"": ""Canceled at"",
+      ""rank"": 4
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39SMAGC4ZFJKZN4PESZ"",
+      ""name"": ""Resolved at"",
+      ""rank"": 5
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39SEZEGDEQZKD9EFTKV"",
+      ""name"": ""Impact started at"",
+      ""rank"": 6
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39S1Q5M2KYT1G36SNZF"",
+      ""name"": ""Documented at"",
+      ""rank"": 9
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39SJNSG3NX8RW40CQ55"",
+      ""name"": ""Reviewed at"",
+      ""rank"": 10
+    }
+  },
+  {
+    ""incident_timestamp"": {
+      ""id"": ""01JPTFW39SKTX26BSSQ75ARAG8"",
+      ""name"": ""Closed at"",
+      ""rank"": 11
+    }
+  }
+]","[
+  {
+    ""duration_metric"": {
+      ""id"": ""01JPTFW39S4K9368N2Y0239KZY"",
+      ""name"": ""Incident duration""
+    }
+  },
+  {
+    ""duration_metric"": {
+      ""id"": ""01KF1V4628E455KGHY0CDXVCWA"",
+      ""name"": ""PM Duration""
+    }
+  },
+  {
+    ""duration_metric"": {
+      ""id"": ""01K6K9Y8AFX7G1RBHVQX2N4EYH"",
+      ""name"": ""Time to Detect""
+    }
+  },
+  {
+    ""duration_metric"": {
+      ""id"": ""01KF1V12XZ3EEWEBCX6AFVN7JD"",
+      ""name"": ""Time to Mitigate""
+    }
+  }
+]","[
+  {
+    ""assignee"": {
+      ""email"": ""benjamin.zhao@sigmacomputing.com"",
+      ""id"": ""01JQ9SWBD2SVA81XSMQN8VWJG5"",
+      ""name"": ""Benjamin Zhao"",
+      ""role"": ""responder"",
+      ""slack_user_id"": ""U015DDKF2MB""
+    },
+    ""role"": {
+      ""created_at"": ""2025-03-20T19:18:23.422Z"",
+      ""description"": ""The first person (usually Primary Global Oncall) that will acknowledge an incident and triage it to the right owner with an official handoff."",
+      ""id"": ""01JPTFW39SZMJVNXNT34N5NYE1"",
+      ""instructions"": ""https://sigmacomputing.atlassian.net/wiki/spaces/ENG/pages/1740734465/Responsibilities+of+On-Call \n\n- Acknowledges the incident\n- Finds an owner via triaging (go/pods) \n- Pull in required parties (consulted engineers)"",
+      ""name"": ""Incident Owner (Global or Pod OnCall)"",
+      ""required"": false,
+      ""role_type"": ""lead"",
+      ""shortform"": ""owner"",
+      ""updated_at"": ""2025-11-11T05:07:20.335Z""
+    }
+  },
+  {
+    ""assignee"": {
+      ""email"": ""don@sigmacomputing.com"",
+      ""id"": ""01JQ9SWAW0454VVJ1PBS87J5SE"",
+      ""name"": ""Don Huang"",
+      ""role"": ""responder"",
+      ""slack_user_id"": ""U1GEANDV5""
+    },
+    ""role"": {
+      ""created_at"": ""2025-03-20T19:18:23.431Z"",
+      ""description"": ""The person who reported the incident"",
+      ""id"": ""01JPTFW39SFJRCV6F23HSSQY8Y"",
+      ""instructions"": """",
+      ""name"": ""Reporter"",
+      ""required"": false,
+      ""role_type"": ""reporter"",
+      ""shortform"": """",
+      ""updated_at"": ""2025-03-20T19:18:23.431Z""
+    }
+  },
+  {
+    ""role"": {
+      ""created_at"": ""2025-08-19T18:34:05.946Z"",
+      ""description"": ""IM for the incident"",
+      ""id"": ""01K31SR87Q4GE6EED69VDPDD7N"",
+      ""instructions"": ""- Make sure it’s clear who is doing what, and that people are working together effectively\n- Ensure everybody has what they need, and any blockers are flagged quickly\n- Provide regular, clear updates for stakeholders to let them know what’s happening (use the /inc update command)"",
+      ""name"": ""Incident Manager"",
+      ""required"": false,
+      ""role_type"": ""custom"",
+      ""shortform"": ""im1"",
+      ""updated_at"": ""2025-11-11T05:07:34.994Z""
+    }
+  },
+  {
+    ""role"": {
+      ""created_at"": ""2025-07-24T20:49:28.647Z"",
+      ""description"": ""Main point of contact with customers during a SEV. They post internal and external comms, working in conjunction with the Incident Manager."",
+      ""id"": ""01K0Z35EJ3VXNY1TPXCZR3SHYZ"",
+      ""instructions"": ""- https://sigmacomputing.atlassian.net/wiki/spaces/ENG/pages/2087026690/Support+On-Call+Quick+Guide+go+oncall911\n- (1) Handle customer raised SEV-0s and escalate as necessary \n- (2) facilitate incident communications between internal sales and engineering teams and customers by working with the Incident Manager and Support Manager to create and distribute timely updates\n- (3) follow and monitor the incident from investigation to resolution."",
+      ""name"": ""TSE On-Call"",
+      ""required"": false,
+      ""role_type"": ""custom"",
+      ""shortform"": ""tse"",
+      ""updated_at"": ""2025-11-11T05:07:28.298Z""
+    }
+  }
+]","[
+  {
+    ""custom_field"": {
+      ""description"": ""Link to an existing Jira ticket (e.g., a customer report) that provides additional context. This field is for reference only; please do not create a new ticket."",
+      ""field_type"": ""text"",
+      ""id"": ""01K05285EYD0CKX8J27JM273XJ"",
+      ""name"": ""Existing Jira Ticket"",
+      ""options"": []
+    },
+    ""values"": [
+      {
+        ""value_text"": ""https://sigmacomputing.atlassian.net/browse/SIG-91528?issueKey=SIG-91528&subProduct=jira-software""
+      }
+    ]
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""Blast Radius workbook for this incident\n"",
+      ""field_type"": ""link"",
+      ""id"": ""01K0Z2WW2E261D26VRVQYTC19Q"",
+      ""name"": ""Blast Radius Workbook"",
+      ""options"": []
+    },
+    ""values"": [
+      {
+        ""value_link"": ""https://staging.sigmacomputing.io/sigma-on-sigma/workbook/CxynbnbJdb12AV8ryLYWl""
+      }
+    ]
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""originEventId of the production deployment that introduced the issue\n\ngo/deferred-sigma-info to lookup the originEventid for commit SHAs\n\nIf there is no direct cause/resolve event (e.g. terraform, DB perf), use \""NONE\"". \n\n#feat-deferred-sigma on slack"",
+      ""field_type"": ""text"",
+      ""id"": ""01K1K8ZHYRPCCDB9CDK1WKJQBQ"",
+      ""name"": ""cause_event_id"",
+      ""options"": []
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""originEventId of the production deployment that resolved the issue\n\ngo/deferred-sigma-info to lookup the originEventid for commit SHAs\n\nIf there is no direct cause/resolve event (e.g. terraform, DB perf), use \""NONE\"". \n\n#feat-deferred-sigma on slack"",
+      ""field_type"": ""text"",
+      ""id"": ""01K1K90E53DPRDKBDM7G6VE047"",
+      ""name"": ""resolve_event_id"",
+      ""options"": []
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""Engineering Team that owns the primary service or component affected"",
+      ""field_type"": ""single_select"",
+      ""id"": ""01K25DFJJGSNWKT5YQTJ8FTV0H"",
+      ""name"": ""Team Name"",
+      ""options"": []
+    },
+    ""values"": [
+      {
+        ""value_catalog_entry"": {
+          ""external_id"": ""crossover"",
+          ""id"": ""01JYFMKGXZ4ZKVY2T1JFNBNRB1"",
+          ""name"": ""Crossover""
+        }
+      }
+    ]
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""Region that Sigma is impacted in"",
+      ""field_type"": ""multi_select"",
+      ""id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+      ""name"": ""Sigma Status By Region"",
+      ""options"": [
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GNCE93W32THB34H91V"",
+          ""sort_key"": 10,
+          ""value"": ""us-west-2 (Oregon)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GNGNCQJNPZN0NATPS1"",
+          ""sort_key"": 20,
+          ""value"": ""us-east-1 (N Virginia)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GN66N473QYMFBZY67G"",
+          ""sort_key"": 30,
+          ""value"": ""eu-west-2 (London)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GN7T0TAXSHP3QKXA7X"",
+          ""sort_key"": 40,
+          ""value"": ""eu-central-1 (Frankfurt)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GNBGVH3547XD6D7PYV"",
+          ""sort_key"": 50,
+          ""value"": ""ca-central 1 (Central)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GNT2DC0DV8RW783DAA"",
+          ""sort_key"": 60,
+          ""value"": ""ap-southeast-2 (Sydney)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GN9ETKKCTR0K12S0JR"",
+          ""sort_key"": 70,
+          ""value"": ""eastus2 (Virginia)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GNB6YZ2ATGS12RKAFD"",
+          ""sort_key"": 80,
+          ""value"": ""westeurope (Netherlands)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GNW85A7JEK1Q971H2H"",
+          ""sort_key"": 90,
+          ""value"": ""canadacentral (Toronto)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GN0SWBZN7BN2XK0C60"",
+          ""sort_key"": 100,
+          ""value"": ""uksouth (London)""
+        },
+        {
+          ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+          ""id"": ""01K3H283GN32Y2W527HV9D6YE4"",
+          ""sort_key"": 110,
+          ""value"": ""us-central1 (Iowa)""
+        }
+      ]
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""This field controls comms reminders (1 hour for the initial update, then every 2 hours). Please update the status after sending an update or deciding one isn't needed!"",
+      ""field_type"": ""multi_select"",
+      ""id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+      ""name"": ""External Comms Status"",
+      ""options"": [
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4T8RFMK0VRYY0K8BZ1JTEDW"",
+          ""sort_key"": 10,
+          ""value"": ""Initial Incident Announcement""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70Y87XK07T8E5F8VKV5"",
+          ""sort_key"": 20,
+          ""value"": ""External Comms not needed""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YAHNBENRZJ0JHY68G"",
+          ""sort_key"": 30,
+          ""value"": ""First Update""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70Y4QHPEWXZV6VK41A2"",
+          ""sort_key"": 40,
+          ""value"": ""Recurring Update 1""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YCBTWSBB6ZRXGHYCZ"",
+          ""sort_key"": 50,
+          ""value"": ""Recurring Update 2""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YS0FH4HY2F1QQ87XR"",
+          ""sort_key"": 60,
+          ""value"": ""Recurring Update 3""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YGW1K6JAK525J2RRE"",
+          ""sort_key"": 70,
+          ""value"": ""Recurring Update 4""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YTTSFXB5NPG89S9BZ"",
+          ""sort_key"": 80,
+          ""value"": ""Recurring Update 5""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YFQ64Z9KV2HC51BV7"",
+          ""sort_key"": 90,
+          ""value"": ""Recurring Update 6""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YEPVF5C1WX2SE7DZ5"",
+          ""sort_key"": 100,
+          ""value"": ""Recurring Update 7""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YHSV6R09FHQAY77SG"",
+          ""sort_key"": 110,
+          ""value"": ""Recurring Update 8""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YFHKZ6R7B3GM3HF15"",
+          ""sort_key"": 120,
+          ""value"": ""Recurring Update 9""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YCD1ASKV782SREVW3"",
+          ""sort_key"": 130,
+          ""value"": ""Recurring Update 10""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70YSQPPPQHDQY9J7974"",
+          ""sort_key"": 140,
+          ""value"": ""Monitoring""
+        },
+        {
+          ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+          ""id"": ""01K4THM70Y3J7VZ24J1N24RSFW"",
+          ""sort_key"": 150,
+          ""value"": ""Resolved""
+        }
+      ]
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""Summary of information from the existing Jira ticket"",
+      ""field_type"": ""text"",
+      ""id"": ""01K4XG4DGN1ECZ33W8ZPZA3P8D"",
+      ""name"": ""Existing Jira Summary"",
+      ""options"": []
+    },
+    ""values"": [
+      {
+        ""value_text"": ""Blue Yonder (6ca0213b-0e60-44ac-8080-8311d0fa9904) reported that they've been getting 503 errors when using the Sigma API, specifically when using the /v2/grants endpoint (full URL endpoint they were using was GET https://api.us.azure.sigmacomputing.com/v2/grants?inodeId=16cc0a39-3e7c-4c60-847b-20dbeb16fe5f). \n\n\n\nWhen looking at SIGDATA_CROSSOVER_API_EVENTS, I'm not seeing any 503 errors for their org. \n\n\n\nWill need to further investigate how often they are hitting these errors and root cause.""
+      }
+    ]
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""Is a PM needed for this incident? A PM is typically required for all SEV0s, SEV1s with regressions, SEV1s with security concerns, or SEV1s where a customer requests a PM. DevEx incidents typically don't require a PM."",
+      ""field_type"": ""single_select"",
+      ""id"": ""01K9FPWF61XAER1W11V43VBKYV"",
+      ""name"": ""PM Needed"",
+      ""options"": [
+        {
+          ""custom_field_id"": ""01K9FPWF61XAER1W11V43VBKYV"",
+          ""id"": ""01K9FPWF61XA2E5H56ZTC0DACD"",
+          ""sort_key"": 10,
+          ""value"": ""Yes""
+        },
+        {
+          ""custom_field_id"": ""01K9FPWF61XAER1W11V43VBKYV"",
+          ""id"": ""01K9FPWF61GHM8DJBECQ1PFHAM"",
+          ""sort_key"": 20,
+          ""value"": ""No""
+        }
+      ]
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""Select the best cause: Code Regression (broke existing code), Code Bug (bug in new code), 3rd Party (vendor/AWS fail), Infra Config (Terraform/K8s), Non-Infra Config (app toggle), Load/Perf (traffic/scaling), or Customer Error."",
+      ""field_type"": ""single_select"",
+      ""id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+      ""name"": ""Incident Cause"",
+      ""options"": [
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV2DBGYWQWJSPYHVJ22"",
+          ""sort_key"": 10,
+          ""value"": ""Code Regression""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV211R5GKP7GNHX0DD1"",
+          ""sort_key"": 20,
+          ""value"": ""Code Bug ""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV2XH1RWFYWWSD7RKKR"",
+          ""sort_key"": 30,
+          ""value"": ""3rd party dependency""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV2876Z081F6RWZT4FV"",
+          ""sort_key"": 40,
+          ""value"": ""Infrastructure Change""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV275YM0PXW0CX76CW6"",
+          ""sort_key"": 50,
+          ""value"": ""Non-Infra Configuration Change""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV21XWTFPNXRWEGF3PY"",
+          ""sort_key"": 60,
+          ""value"": ""Load/Performance""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV2M94BW60A442AW640"",
+          ""sort_key"": 70,
+          ""value"": ""Customer error""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV2QWPR7TEPWGACEFMZ"",
+          ""sort_key"": 80,
+          ""value"": ""Duplicate""
+        },
+        {
+          ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+          ""id"": ""01K9FX7HV2M9MM1SF51DWYW155"",
+          ""sort_key"": 90,
+          ""value"": ""Other, enter a new option""
+        }
+      ]
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""How was the issue first discovered?"",
+      ""field_type"": ""single_select"",
+      ""id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+      ""name"": ""Detected By"",
+      ""options"": [
+        {
+          ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+          ""id"": ""01K9FXA0040RY8Q1KSA09XWTAW"",
+          ""sort_key"": 10,
+          ""value"": ""External Customer Report""
+        },
+        {
+          ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+          ""id"": ""01K9FXA004VSA6H5SVV346N2VA"",
+          ""sort_key"": 20,
+          ""value"": ""Internal User Reports""
+        },
+        {
+          ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+          ""id"": ""01K9FXA004VE8FY82F7AWAY3RY"",
+          ""sort_key"": 30,
+          ""value"": ""Monitoring""
+        },
+        {
+          ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+          ""id"": ""01K9FXF7J3YF396VBDXPZ9AHRQ"",
+          ""sort_key"": 40,
+          ""value"": ""Failing Tests""
+        },
+        {
+          ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+          ""id"": ""01K9FXA004CFKZ9QN3JD7XSTRJ"",
+          ""sort_key"": 50,
+          ""value"": ""Other; Enter a new option""
+        }
+      ]
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""What primary service was impacted?"",
+      ""field_type"": ""text"",
+      ""id"": ""01K9FXCTQCRMAMMERJRG3AV8EB"",
+      ""name"": ""Service Affected"",
+      ""options"": []
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""What primary repository was involved in the cause or fix?"",
+      ""field_type"": ""text"",
+      ""id"": ""01K9G8RFET944A7MGABFTGA002"",
+      ""name"": ""Repository"",
+      ""options"": []
+    },
+    ""values"": []
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""Link to the PM document that needs to be filled for this incident (if applicable)"",
+      ""field_type"": ""link"",
+      ""id"": ""01K9GCWRJVS9EX548JQN7WZZK3"",
+      ""name"": ""PM Document"",
+      ""options"": []
+    },
+    ""values"": [
+      {
+        ""value_link"": ""https://docs.google.com/document/d/1EnriAwvG967_YuJx9FUSufNXmibeBdApTRJjeV2f6io/edit?tab=t.0""
+      }
+    ]
+  },
+  {
+    ""custom_field"": {
+      ""description"": ""If available, link the original thread for reference. This provides history on the issue for the incident channel."",
+      ""field_type"": ""link"",
+      ""id"": ""01KEFF89GC0WW317J0EGWE26BJ"",
+      ""name"": ""Existing Slack Thread"",
+      ""options"": []
+    },
+    ""values"": [
+      {
+        ""value_link"": ""https://sigmacomputing.slack.com/archives/C036C7PTT1P/p1768504054840119""
+      }
+    ]
+  }
+]","{
+  ""call_url"": ""https://sigmacomputing.zoom.us/j/93033996768?pwd=huBEDVBWDGeb8GmJucM7nzsGYSPCqh.1"",
+  ""created_at"": ""2026-01-15T21:24:13.292Z"",
+  ""creator"": {
+    ""user"": {
+      ""email"": ""don@sigmacomputing.com"",
+      ""id"": ""01JQ9SWAW0454VVJ1PBS87J5SE"",
+      ""name"": ""Don Huang"",
+      ""role"": ""responder"",
+      ""slack_user_id"": ""U1GEANDV5""
+    }
+  },
+  ""custom_field_entries"": [
+    {
+      ""custom_field"": {
+        ""description"": ""Link to an existing Jira ticket (e.g., a customer report) that provides additional context. This field is for reference only; please do not create a new ticket."",
+        ""field_type"": ""text"",
+        ""id"": ""01K05285EYD0CKX8J27JM273XJ"",
+        ""name"": ""Existing Jira Ticket"",
+        ""options"": []
+      },
+      ""values"": [
+        {
+          ""value_text"": ""https://sigmacomputing.atlassian.net/browse/SIG-91528?issueKey=SIG-91528&subProduct=jira-software""
+        }
+      ]
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""Blast Radius workbook for this incident\n"",
+        ""field_type"": ""link"",
+        ""id"": ""01K0Z2WW2E261D26VRVQYTC19Q"",
+        ""name"": ""Blast Radius Workbook"",
+        ""options"": []
+      },
+      ""values"": [
+        {
+          ""value_link"": ""https://staging.sigmacomputing.io/sigma-on-sigma/workbook/CxynbnbJdb12AV8ryLYWl""
+        }
+      ]
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""originEventId of the production deployment that introduced the issue\n\ngo/deferred-sigma-info to lookup the originEventid for commit SHAs\n\nIf there is no direct cause/resolve event (e.g. terraform, DB perf), use \""NONE\"". \n\n#feat-deferred-sigma on slack"",
+        ""field_type"": ""text"",
+        ""id"": ""01K1K8ZHYRPCCDB9CDK1WKJQBQ"",
+        ""name"": ""cause_event_id"",
+        ""options"": []
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""originEventId of the production deployment that resolved the issue\n\ngo/deferred-sigma-info to lookup the originEventid for commit SHAs\n\nIf there is no direct cause/resolve event (e.g. terraform, DB perf), use \""NONE\"". \n\n#feat-deferred-sigma on slack"",
+        ""field_type"": ""text"",
+        ""id"": ""01K1K90E53DPRDKBDM7G6VE047"",
+        ""name"": ""resolve_event_id"",
+        ""options"": []
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""Engineering Team that owns the primary service or component affected"",
+        ""field_type"": ""single_select"",
+        ""id"": ""01K25DFJJGSNWKT5YQTJ8FTV0H"",
+        ""name"": ""Team Name"",
+        ""options"": []
+      },
+      ""values"": [
+        {
+          ""value_catalog_entry"": {
+            ""external_id"": ""crossover"",
+            ""id"": ""01JYFMKGXZ4ZKVY2T1JFNBNRB1"",
+            ""name"": ""Crossover""
+          }
+        }
+      ]
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""Region that Sigma is impacted in"",
+        ""field_type"": ""multi_select"",
+        ""id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+        ""name"": ""Sigma Status By Region"",
+        ""options"": [
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GNCE93W32THB34H91V"",
+            ""sort_key"": 10,
+            ""value"": ""us-west-2 (Oregon)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GNGNCQJNPZN0NATPS1"",
+            ""sort_key"": 20,
+            ""value"": ""us-east-1 (N Virginia)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GN66N473QYMFBZY67G"",
+            ""sort_key"": 30,
+            ""value"": ""eu-west-2 (London)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GN7T0TAXSHP3QKXA7X"",
+            ""sort_key"": 40,
+            ""value"": ""eu-central-1 (Frankfurt)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GNBGVH3547XD6D7PYV"",
+            ""sort_key"": 50,
+            ""value"": ""ca-central 1 (Central)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GNT2DC0DV8RW783DAA"",
+            ""sort_key"": 60,
+            ""value"": ""ap-southeast-2 (Sydney)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GN9ETKKCTR0K12S0JR"",
+            ""sort_key"": 70,
+            ""value"": ""eastus2 (Virginia)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GNB6YZ2ATGS12RKAFD"",
+            ""sort_key"": 80,
+            ""value"": ""westeurope (Netherlands)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GNW85A7JEK1Q971H2H"",
+            ""sort_key"": 90,
+            ""value"": ""canadacentral (Toronto)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GN0SWBZN7BN2XK0C60"",
+            ""sort_key"": 100,
+            ""value"": ""uksouth (London)""
+          },
+          {
+            ""custom_field_id"": ""01K3H283GN8KF27K7BSQ79XJ9R"",
+            ""id"": ""01K3H283GN32Y2W527HV9D6YE4"",
+            ""sort_key"": 110,
+            ""value"": ""us-central1 (Iowa)""
+          }
+        ]
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""This field controls comms reminders (1 hour for the initial update, then every 2 hours). Please update the status after sending an update or deciding one isn't needed!"",
+        ""field_type"": ""multi_select"",
+        ""id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+        ""name"": ""External Comms Status"",
+        ""options"": [
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4T8RFMK0VRYY0K8BZ1JTEDW"",
+            ""sort_key"": 10,
+            ""value"": ""Initial Incident Announcement""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70Y87XK07T8E5F8VKV5"",
+            ""sort_key"": 20,
+            ""value"": ""External Comms not needed""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YAHNBENRZJ0JHY68G"",
+            ""sort_key"": 30,
+            ""value"": ""First Update""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70Y4QHPEWXZV6VK41A2"",
+            ""sort_key"": 40,
+            ""value"": ""Recurring Update 1""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YCBTWSBB6ZRXGHYCZ"",
+            ""sort_key"": 50,
+            ""value"": ""Recurring Update 2""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YS0FH4HY2F1QQ87XR"",
+            ""sort_key"": 60,
+            ""value"": ""Recurring Update 3""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YGW1K6JAK525J2RRE"",
+            ""sort_key"": 70,
+            ""value"": ""Recurring Update 4""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YTTSFXB5NPG89S9BZ"",
+            ""sort_key"": 80,
+            ""value"": ""Recurring Update 5""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YFQ64Z9KV2HC51BV7"",
+            ""sort_key"": 90,
+            ""value"": ""Recurring Update 6""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YEPVF5C1WX2SE7DZ5"",
+            ""sort_key"": 100,
+            ""value"": ""Recurring Update 7""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YHSV6R09FHQAY77SG"",
+            ""sort_key"": 110,
+            ""value"": ""Recurring Update 8""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YFHKZ6R7B3GM3HF15"",
+            ""sort_key"": 120,
+            ""value"": ""Recurring Update 9""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YCD1ASKV782SREVW3"",
+            ""sort_key"": 130,
+            ""value"": ""Recurring Update 10""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70YSQPPPQHDQY9J7974"",
+            ""sort_key"": 140,
+            ""value"": ""Monitoring""
+          },
+          {
+            ""custom_field_id"": ""01K4T8RFMKXVQ2SEX8VGTCP6HW"",
+            ""id"": ""01K4THM70Y3J7VZ24J1N24RSFW"",
+            ""sort_key"": 150,
+            ""value"": ""Resolved""
+          }
+        ]
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""Summary of information from the existing Jira ticket"",
+        ""field_type"": ""text"",
+        ""id"": ""01K4XG4DGN1ECZ33W8ZPZA3P8D"",
+        ""name"": ""Existing Jira Summary"",
+        ""options"": []
+      },
+      ""values"": [
+        {
+          ""value_text"": ""Blue Yonder (6ca0213b-0e60-44ac-8080-8311d0fa9904) reported that they've been getting 503 errors when using the Sigma API, specifically when using the /v2/grants endpoint (full URL endpoint they were using was GET https://api.us.azure.sigmacomputing.com/v2/grants?inodeId=16cc0a39-3e7c-4c60-847b-20dbeb16fe5f). \n\n\n\nWhen looking at SIGDATA_CROSSOVER_API_EVENTS, I'm not seeing any 503 errors for their org. \n\n\n\nWill need to further investigate how often they are hitting these errors and root cause.""
+        }
+      ]
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""Is a PM needed for this incident? A PM is typically required for all SEV0s, SEV1s with regressions, SEV1s with security concerns, or SEV1s where a customer requests a PM. DevEx incidents typically don't require a PM."",
+        ""field_type"": ""single_select"",
+        ""id"": ""01K9FPWF61XAER1W11V43VBKYV"",
+        ""name"": ""PM Needed"",
+        ""options"": [
+          {
+            ""custom_field_id"": ""01K9FPWF61XAER1W11V43VBKYV"",
+            ""id"": ""01K9FPWF61XA2E5H56ZTC0DACD"",
+            ""sort_key"": 10,
+            ""value"": ""Yes""
+          },
+          {
+            ""custom_field_id"": ""01K9FPWF61XAER1W11V43VBKYV"",
+            ""id"": ""01K9FPWF61GHM8DJBECQ1PFHAM"",
+            ""sort_key"": 20,
+            ""value"": ""No""
+          }
+        ]
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""Select the best cause: Code Regression (broke existing code), Code Bug (bug in new code), 3rd Party (vendor/AWS fail), Infra Config (Terraform/K8s), Non-Infra Config (app toggle), Load/Perf (traffic/scaling), or Customer Error."",
+        ""field_type"": ""single_select"",
+        ""id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+        ""name"": ""Incident Cause"",
+        ""options"": [
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV2DBGYWQWJSPYHVJ22"",
+            ""sort_key"": 10,
+            ""value"": ""Code Regression""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV211R5GKP7GNHX0DD1"",
+            ""sort_key"": 20,
+            ""value"": ""Code Bug ""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV2XH1RWFYWWSD7RKKR"",
+            ""sort_key"": 30,
+            ""value"": ""3rd party dependency""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV2876Z081F6RWZT4FV"",
+            ""sort_key"": 40,
+            ""value"": ""Infrastructure Change""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV275YM0PXW0CX76CW6"",
+            ""sort_key"": 50,
+            ""value"": ""Non-Infra Configuration Change""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV21XWTFPNXRWEGF3PY"",
+            ""sort_key"": 60,
+            ""value"": ""Load/Performance""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV2M94BW60A442AW640"",
+            ""sort_key"": 70,
+            ""value"": ""Customer error""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV2QWPR7TEPWGACEFMZ"",
+            ""sort_key"": 80,
+            ""value"": ""Duplicate""
+          },
+          {
+            ""custom_field_id"": ""01K9FX7HV20ADEA4AV6F3BD0EE"",
+            ""id"": ""01K9FX7HV2M9MM1SF51DWYW155"",
+            ""sort_key"": 90,
+            ""value"": ""Other, enter a new option""
+          }
+        ]
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""How was the issue first discovered?"",
+        ""field_type"": ""single_select"",
+        ""id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+        ""name"": ""Detected By"",
+        ""options"": [
+          {
+            ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+            ""id"": ""01K9FXA0040RY8Q1KSA09XWTAW"",
+            ""sort_key"": 10,
+            ""value"": ""External Customer Report""
+          },
+          {
+            ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+            ""id"": ""01K9FXA004VSA6H5SVV346N2VA"",
+            ""sort_key"": 20,
+            ""value"": ""Internal User Reports""
+          },
+          {
+            ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+            ""id"": ""01K9FXA004VE8FY82F7AWAY3RY"",
+            ""sort_key"": 30,
+            ""value"": ""Monitoring""
+          },
+          {
+            ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+            ""id"": ""01K9FXF7J3YF396VBDXPZ9AHRQ"",
+            ""sort_key"": 40,
+            ""value"": ""Failing Tests""
+          },
+          {
+            ""custom_field_id"": ""01K9FXA004EYPS31926Y5BNJDN"",
+            ""id"": ""01K9FXA004CFKZ9QN3JD7XSTRJ"",
+            ""sort_key"": 50,
+            ""value"": ""Other; Enter a new option""
+          }
+        ]
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""What primary service was impacted?"",
+        ""field_type"": ""text"",
+        ""id"": ""01K9FXCTQCRMAMMERJRG3AV8EB"",
+        ""name"": ""Service Affected"",
+        ""options"": []
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""What primary repository was involved in the cause or fix?"",
+        ""field_type"": ""text"",
+        ""id"": ""01K9G8RFET944A7MGABFTGA002"",
+        ""name"": ""Repository"",
+        ""options"": []
+      },
+      ""values"": []
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""Link to the PM document that needs to be filled for this incident (if applicable)"",
+        ""field_type"": ""link"",
+        ""id"": ""01K9GCWRJVS9EX548JQN7WZZK3"",
+        ""name"": ""PM Document"",
+        ""options"": []
+      },
+      ""values"": [
+        {
+          ""value_link"": ""https://docs.google.com/document/d/1EnriAwvG967_YuJx9FUSufNXmibeBdApTRJjeV2f6io/edit?tab=t.0""
+        }
+      ]
+    },
+    {
+      ""custom_field"": {
+        ""description"": ""If available, link the original thread for reference. This provides history on the issue for the incident channel."",
+        ""field_type"": ""link"",
+        ""id"": ""01KEFF89GC0WW317J0EGWE26BJ"",
+        ""name"": ""Existing Slack Thread"",
+        ""options"": []
+      },
+      ""values"": [
+        {
+          ""value_link"": ""https://sigmacomputing.slack.com/archives/C036C7PTT1P/p1768504054840119""
+        }
+      ]
+    }
+  ],
+  ""duration_metrics"": [
+    {
+      ""duration_metric"": {
+        ""id"": ""01JPTFW39S4K9368N2Y0239KZY"",
+        ""name"": ""Incident duration""
+      }
+    },
+    {
+      ""duration_metric"": {
+        ""id"": ""01KF1V4628E455KGHY0CDXVCWA"",
+        ""name"": ""PM Duration""
+      }
+    },
+    {
+      ""duration_metric"": {
+        ""id"": ""01K6K9Y8AFX7G1RBHVQX2N4EYH"",
+        ""name"": ""Time to Detect""
+      }
+    },
+    {
+      ""duration_metric"": {
+        ""id"": ""01KF1V12XZ3EEWEBCX6AFVN7JD"",
+        ""name"": ""Time to Mitigate""
+      }
+    }
+  ],
+  ""external_issue_reference"": {
+    ""issue_name"": ""SIG-91594"",
+    ""issue_permalink"": ""https://sigmacomputing.atlassian.net/browse/SIG-91594"",
+    ""provider"": ""jira""
+  },
+  ""has_debrief"": false,
+  ""id"": ""01KF1RPV989P8J7TZZVTNHAZ1T"",
+  ""incident_role_assignments"": [
+    {
+      ""assignee"": {
+        ""email"": ""benjamin.zhao@sigmacomputing.com"",
+        ""id"": ""01JQ9SWBD2SVA81XSMQN8VWJG5"",
+        ""name"": ""Benjamin Zhao"",
+        ""role"": ""responder"",
+        ""slack_user_id"": ""U015DDKF2MB""
+      },
+      ""role"": {
+        ""created_at"": ""2025-03-20T19:18:23.422Z"",
+        ""description"": ""The first person (usually Primary Global Oncall) that will acknowledge an incident and triage it to the right owner with an official handoff."",
+        ""id"": ""01JPTFW39SZMJVNXNT34N5NYE1"",
+        ""instructions"": ""https://sigmacomputing.atlassian.net/wiki/spaces/ENG/pages/1740734465/Responsibilities+of+On-Call \n\n- Acknowledges the incident\n- Finds an owner via triaging (go/pods) \n- Pull in required parties (consulted engineers)"",
+        ""name"": ""Incident Owner (Global or Pod OnCall)"",
+        ""required"": false,
+        ""role_type"": ""lead"",
+        ""shortform"": ""owner"",
+        ""updated_at"": ""2025-11-11T05:07:20.335Z""
+      }
+    },
+    {
+      ""assignee"": {
+        ""email"": ""don@sigmacomputing.com"",
+        ""id"": ""01JQ9SWAW0454VVJ1PBS87J5SE"",
+        ""name"": ""Don Huang"",
+        ""role"": ""responder"",
+        ""slack_user_id"": ""U1GEANDV5""
+      },
+      ""role"": {
+        ""created_at"": ""2025-03-20T19:18:23.431Z"",
+        ""description"": ""The person who reported the incident"",
+        ""id"": ""01JPTFW39SFJRCV6F23HSSQY8Y"",
+        ""instructions"": """",
+        ""name"": ""Reporter"",
+        ""required"": false,
+        ""role_type"": ""reporter"",
+        ""shortform"": """",
+        ""updated_at"": ""2025-03-20T19:18:23.431Z""
+      }
+    },
+    {
+      ""role"": {
+        ""created_at"": ""2025-08-19T18:34:05.946Z"",
+        ""description"": ""IM for the incident"",
+        ""id"": ""01K31SR87Q4GE6EED69VDPDD7N"",
+        ""instructions"": ""- Make sure it’s clear who is doing what, and that people are working together effectively\n- Ensure everybody has what they need, and any blockers are flagged quickly\n- Provide regular, clear updates for stakeholders to let them know what’s happening (use the /inc update command)"",
+        ""name"": ""Incident Manager"",
+        ""required"": false,
+        ""role_type"": ""custom"",
+        ""shortform"": ""im1"",
+        ""updated_at"": ""2025-11-11T05:07:34.994Z""
+      }
+    },
+    {
+      ""role"": {
+        ""created_at"": ""2025-07-24T20:49:28.647Z"",
+        ""description"": ""Main point of contact with customers during a SEV. They post internal and external comms, working in conjunction with the Incident Manager."",
+        ""id"": ""01K0Z35EJ3VXNY1TPXCZR3SHYZ"",
+        ""instructions"": ""- https://sigmacomputing.atlassian.net/wiki/spaces/ENG/pages/2087026690/Support+On-Call+Quick+Guide+go+oncall911\n- (1) Handle customer raised SEV-0s and escalate as necessary \n- (2) facilitate incident communications between internal sales and engineering teams and customers by working with the Incident Manager and Support Manager to create and distribute timely updates\n- (3) follow and monitor the incident from investigation to resolution."",
+        ""name"": ""TSE On-Call"",
+        ""required"": false,
+        ""role_type"": ""custom"",
+        ""shortform"": ""tse"",
+        ""updated_at"": ""2025-11-11T05:07:28.298Z""
+      }
+    }
+  ],
+  ""incident_status"": {
+    ""category"": ""live"",
+    ""created_at"": ""2025-03-20T19:18:23.365Z"",
+    ""description"": ""We've spotted that something is wrong, and we are in the process of understanding why and mitigating"",
+    ""id"": ""01JPTFW39S0TZHA7F9W5CJ2GPP"",
+    ""name"": ""In Progress"",
+    ""rank"": 1,
+    ""updated_at"": ""2025-08-22T20:54:25.22Z""
+  },
+  ""incident_timestamp_values"": [
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39SV6ZYJSZ5DYV2HYC4"",
+        ""name"": ""Declared at"",
+        ""rank"": 0
+      },
+      ""value"": {
+        ""value"": ""2026-01-15T21:24:13.292Z""
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39S56BQB482AA8T76BG"",
+        ""name"": ""Accepted at"",
+        ""rank"": 1
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39SBNWKPATWMVMZABZF"",
+        ""name"": ""Declined at"",
+        ""rank"": 2
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39SMS2TA5SSN6P538M1"",
+        ""name"": ""Merged at"",
+        ""rank"": 3
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39S2EBQ06NY4VVQR2BE"",
+        ""name"": ""Canceled at"",
+        ""rank"": 4
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39SMAGC4ZFJKZN4PESZ"",
+        ""name"": ""Resolved at"",
+        ""rank"": 5
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39SEZEGDEQZKD9EFTKV"",
+        ""name"": ""Impact started at"",
+        ""rank"": 6
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39S1Q5M2KYT1G36SNZF"",
+        ""name"": ""Documented at"",
+        ""rank"": 9
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39SJNSG3NX8RW40CQ55"",
+        ""name"": ""Reviewed at"",
+        ""rank"": 10
+      }
+    },
+    {
+      ""incident_timestamp"": {
+        ""id"": ""01JPTFW39SKTX26BSSQ75ARAG8"",
+        ""name"": ""Closed at"",
+        ""rank"": 11
+      }
+    }
+  ],
+  ""incident_type"": {
+    ""create_in_triage"": ""optional"",
+    ""created_at"": ""2025-03-20T19:18:23.827Z"",
+    ""description"": ""This is the standard SEV type that will engage the Engineering team (Global On Call), along with the Support Team and IM if needed. "",
+    ""id"": ""01JPTFW39S6MS5Q7C904VV4G6N"",
+    ""is_default"": true,
+    ""name"": ""Engineering"",
+    ""private_incidents_only"": false,
+    ""updated_at"": ""2025-11-11T17:48:31.257Z""
+  },
+  ""mode"": ""standard"",
+  ""name"": ""BY getting 503 errors from /v2/grants endpoint"",
+  ""permalink"": ""https://app.incident.io/sigmacomputing/incidents/01KF1RPV989P8J7TZZVTNHAZ1T"",
+  ""reference"": ""INC-290"",
+  ""severity"": {
+    ""created_at"": ""2025-03-20T19:18:23.307Z"",
+    ""description"": ""High Urgency - PST business hours only. For reference, SEV level definitions are available at go/sev-checker."",
+    ""id"": ""01JPTFW39S98VAXZBY9BW09ZPW"",
+    ""name"": ""SEV 1"",
+    ""rank"": 1,
+    ""updated_at"": ""2025-11-11T05:03:18.594Z""
+  },
+  ""slack_channel_id"": ""C0A8XSJ4J4V"",
+  ""slack_channel_name"": ""incident-290"",
+  ""slack_team_id"": ""T02NLKT1F"",
+  ""updated_at"": ""2026-01-16T23:25:24.624Z"",
+  ""visibility"": ""public"",
+  ""workload_minutes_late"": 49.4,
+  ""workload_minutes_sleeping"": 0,
+  ""workload_minutes_total"": 801.2,
+  ""workload_minutes_working"": 751.8
+}",1/19,INC-290 | BY getting 503 errors from /v2/grants endpoint,𝗦𝗘𝗩 𝟏  ❖  [In Progress]

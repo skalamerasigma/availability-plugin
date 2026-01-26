@@ -1752,6 +1752,7 @@ export function AvailabilityPlugin() {
     'Stephen',
     'Grace',
     'Zen',
+    'Chetana',
     'svc-prd-tse-intercom SVC',
     'TSE 6519361',
     'Zen Junior',
