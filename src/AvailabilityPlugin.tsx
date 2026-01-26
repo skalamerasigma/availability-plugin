@@ -2044,6 +2044,7 @@ export function AvailabilityPlugin() {
       const fetchedConversations = Array.isArray(response) ? response : (response.conversations || [])
       
       setUnassignedConversationsData(fetchedConversations)
+      setLastUpdated(new Date()) // Update last refresh time
     } catch (error) {
       console.error('Timeline Belt Plugin: Error fetching unassigned conversations:', error)
     }
