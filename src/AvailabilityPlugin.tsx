@@ -3045,6 +3045,22 @@ export function AvailabilityPlugin() {
     return grouped
   }, [agents, cities])
 
+  // =================================================================
+  // ZOOM CALL COUNT (from agentsByCity data)
+  // Counts agents with ringColor === 'zoom'
+  // =================================================================
+  const zoomCallCount = useMemo(() => {
+    let count = 0
+    agentsByCity.forEach((cityAgents) => {
+      cityAgents.forEach(agent => {
+        if (agent.ringColor === 'zoom') {
+          count++
+        }
+      })
+    })
+    return count
+  }, [agentsByCity])
+
   // Extract OOO agents when schedule data is available
   useEffect(() => {
     const scheduleTSECol = config.scheduleTSE as string
@@ -3380,6 +3396,7 @@ export function AvailabilityPlugin() {
         closedCount={totalClosedToday}
         chatsTrending={chatsTrending}
         previousClosed={historicalMetrics.yesterdayClosed}
+        zoomCallCount={zoomCallCount}
       />
       <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}

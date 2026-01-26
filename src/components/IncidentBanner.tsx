@@ -25,6 +25,7 @@ interface IncidentBannerProps {
   closedCount?: number
   chatsTrending?: TrendingData | null
   previousClosed?: number | null
+  zoomCallCount?: number
 }
 
 interface Incident {
@@ -35,6 +36,7 @@ interface Incident {
 }
 
 const INCIDENT_IO_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769419778/Untitled_design_29_jomb69.svg'
+const ZOOM_ICON_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769458061/1996_Nintendo_22_oorusp.svg'
 const ROTATION_INTERVAL_MS = 10000 // 10 seconds
 
 export function IncidentBanner({
@@ -48,6 +50,7 @@ export function IncidentBanner({
   closedCount,
   chatsTrending,
   previousClosed,
+  zoomCallCount,
 }: IncidentBannerProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [onCallData, setOnCallData] = useState<OnCallPerson[]>([])
@@ -377,6 +380,26 @@ export function IncidentBanner({
                   )}
                 </div>
               )}
+            </div>
+          </>
+        )}
+
+        {/* Zoom Call Count */}
+        {zoomCallCount !== undefined && (
+          <>
+            <div className="incident-banner-divider"></div>
+            <div className="zoom-call-section">
+              <div className="zoom-icon-container">
+                <img
+                  src={ZOOM_ICON_URL}
+                  alt="Zoom calls"
+                  className="zoom-icon"
+                />
+                {zoomCallCount > 0 && (
+                  <span className="zoom-badge">{zoomCallCount}</span>
+                )}
+              </div>
+              <div className="zoom-label">On Zoom</div>
             </div>
           </>
         )}
