@@ -497,11 +497,13 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
   const [conveyorBeltCurrentTime, setConveyorBeltCurrentTime] = useState(() => Date.now() / 1000)
   const [showBreachedModal, setShowBreachedModal] = useState(false)
   const [selectedConversation, setSelectedConversation] = useState<any | null>(null)
+  const [explodingIds, setExplodingIds] = useState<Set<string>>(new Set())
   const confirmedBreachedIdsRef = useRef<Set<string>>(new Set())
   const removedIdsRef = useRef<Set<string>>(new Set())
   const checkedIdsRef = useRef<Set<string>>(new Set())
   const checkingIdsRef = useRef<Set<string>>(new Set())
   const lastResetRef = useRef<number | null>(null)
+  const previousBreachedIdsRef = useRef<Set<string>>(new Set())
   const assignmentStatusEndpoint = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/assignment-status'
 
   // Update current time every second for conveyor belt animation
@@ -610,7 +612,21 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
           : isConversationUnassigned(result)
 
         if (isUnassigned) {
+          // Check if this is a newly breached conversation
+          if (!confirmedBreachedIdsRef.current.has(conversationId) && !previousBreachedIdsRef.current.has(conversationId)) {
+            // Trigger explosion animation
+            setExplodingIds(prev => new Set(prev).add(conversationId))
+            // Remove from exploding after animation completes (800ms)
+            setTimeout(() => {
+              setExplodingIds(prev => {
+                const next = new Set(prev)
+                next.delete(conversationId)
+                return next
+              })
+            }, 800)
+          }
           confirmedBreachedIdsRef.current.add(conversationId)
+          previousBreachedIdsRef.current.add(conversationId)
           removedIdsRef.current.delete(conversationId)
         } else {
           removedIdsRef.current.add(conversationId)
@@ -680,8 +696,22 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
       const elapsedSeconds = now - waitStartTimestamp
       // Mark as breached when elapsed time reaches 600 seconds (10 minutes)
       if (elapsedSeconds >= 600) {
+        // Check if this is a newly breached conversation
+        if (!confirmedBreachedIdsRef.current.has(convId) && !previousBreachedIdsRef.current.has(convId)) {
+          // Trigger explosion animation
+          setExplodingIds(prev => new Set(prev).add(convId))
+          // Remove from exploding after animation completes (800ms)
+          setTimeout(() => {
+            setExplodingIds(prev => {
+              const next = new Set(prev)
+              next.delete(convId)
+              return next
+            })
+          }, 800)
+        }
         // Mark as breached
         confirmedBreachedIdsRef.current.add(convId)
+        previousBreachedIdsRef.current.add(convId)
         checkedIdsRef.current.add(convId)
       } else {
         // Remove from breached if under 10 minutes
@@ -912,7 +942,8 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
             if (!createdTimestamp) return false
             const convId = conv.id || conv.conversation_id
             if (convId && removedIdsRef.current.has(convId)) return false
-            // Remove breached conversations from belt - they drop off once they breach
+            // Show exploding bubbles during animation, then remove breached ones
+            if (convId && explodingIds.has(convId)) return true // Keep showing during explosion
             if (convId && confirmedBreachedIdsRef.current.has(convId)) return false
             return true
           }).map((conv, index) => {
@@ -961,10 +992,14 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
               ? 'BREACHED' 
               : (minutesRemaining > 0 ? `${minutesRemaining}m ${secsRemaining}s` : `${secsRemaining}s`)
             
+            // Check if this bubble is currently exploding
+            const isExploding = convId && explodingIds.has(convId)
+            
             return (
               <div
                 key={convId}
-                onClick={() => setSelectedConversation(conv)}
+                onClick={() => !isExploding && setSelectedConversation(conv)}
+                className={isExploding ? 'bubble-exploding' : ''}
                 style={{
                   position: 'absolute',
                   // Position using right offset - starts far right, moves toward 10 min marker (110px from right)
@@ -972,29 +1007,65 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                   // At 100% progress: right = 110px (at 10 min marker)
                   right: `calc(110px + (100% - 120px) * ${(100 - Math.min(progressPercent, 100)) / 100})`,
                   top: `calc(50% + ${staggerOffset}px)`,
-                  transform: 'translate(50%, -50%)',
-                  transition: 'right 1s linear, top 0.3s ease, z-index 0s',
+                  transform: isExploding ? 'translate(50%, -50%) scale(0)' : 'translate(50%, -50%)',
+                  transition: isExploding 
+                    ? 'transform 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55), opacity 0.6s ease-out' 
+                    : 'right 1s linear, top 0.3s ease, z-index 0s',
+                  opacity: isExploding ? 0 : 1,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                   textDecoration: 'none',
                   color: 'inherit',
-                  zIndex: 20 + index,  // Stack newer bubbles on top
-                  cursor: 'pointer',
+                  zIndex: isExploding ? 200 : 20 + index,  // Exploding bubbles on top
+                  cursor: isExploding ? 'default' : 'pointer',
                   outline: 'none',
-                  border: 'none'
+                  border: 'none',
+                  pointerEvents: isExploding ? 'none' : 'auto'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translate(50%, -50%) scale(1.1)'
-                  e.currentTarget.style.zIndex = '100'
+                  if (!isExploding) {
+                    e.currentTarget.style.transform = 'translate(50%, -50%) scale(1.1)'
+                    e.currentTarget.style.zIndex = '100'
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translate(50%, -50%) scale(1)'
-                  e.currentTarget.style.zIndex = String(20 + index)
+                  if (!isExploding) {
+                    e.currentTarget.style.transform = 'translate(50%, -50%) scale(1)'
+                    e.currentTarget.style.zIndex = String(20 + index)
+                  }
                 }}
                 title={`Conversation ${convId} - ${isBreached ? 'BREACHED' : (isPendingBreachCheck ? 'Pending breach check' : `${minutesRemaining}m ${secsRemaining}s until breach`)}`}
               >
+                {/* Explosion particles */}
+                {isExploding && (
+                  <div style={{
+                    position: 'absolute',
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'none'
+                  }}>
+                    {[...Array(8)].map((_, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          position: 'absolute',
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          background: i % 2 === 0 ? '#ef4444' : '#f97316',
+                          top: '50%',
+                          left: '50%',
+                          transform: `translate(-50%, -50%) rotate(${i * 45}deg) translateY(-60px)`,
+                          animation: `particle-burst 0.6s ease-out forwards`,
+                          animationDelay: `${i * 0.02}s`,
+                          opacity: 0
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
                 <div style={{
                   position: 'relative',
                   width: '80px',
@@ -1003,7 +1074,8 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                   alignItems: 'center',
                   justifyContent: 'center',
                   outline: 'none',
-                  border: 'none'
+                  border: 'none',
+                  animation: isExploding ? 'bubble-pop 0.6s ease-out forwards' : 'none'
                 }}>
                   <img 
                     src={svgUrl}
