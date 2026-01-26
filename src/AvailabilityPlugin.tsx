@@ -1841,11 +1841,11 @@ export function AvailabilityPlugin() {
   
   // =================================================================
   // TOTAL CLOSED TODAY (from Intercom data)
-  // Sum of "Closed" column from TSE conversation table
-  // Matches the table's calculation logic exactly
+  // Counts ALL conversations closed today (PT timezone)
+  // Matches queue-health-monitor's closedtoday filter
   // =================================================================
   const totalClosedToday = useMemo(() => {
-    if (!intercomConversations.length || !intercomTeamMembers.length) return 0
+    if (!intercomConversations.length) return 0
     
     // Helper to check if timestamp is today (PT timezone)
     const isToday = (timestamp: number | undefined): boolean => {
@@ -1862,47 +1862,20 @@ export function AvailabilityPlugin() {
       return ptFormatter.format(now) === ptFormatter.format(date)
     }
     
-    // Check if a conversation was closed today
-    const isClosedToday = (conv: any): boolean => {
-      return conv.state === 'closed' && isToday(conv.closed_at)
-    }
+    // Count ALL conversations closed today (regardless of assignee)
+    const closedCount = intercomConversations.filter(conv => {
+      const state = (conv.state || '').toLowerCase()
+      if (state !== 'closed') return false
+      
+      const closedAt = conv.closed_at
+      if (!closedAt) return false
+      
+      return isToday(closedAt)
+    }).length
     
-    // Group by TSE and sum closed today (matching TSEConversationTable logic)
-    const tseMap = new Map<string, { name: string, count: number }>()
-    
-    intercomConversations.forEach(conv => {
-      const assigneeId = conv.admin_assignee_id || 
-        (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
-      
-      if (!assigneeId) return
-      
-      const idStr = String(assigneeId)
-      
-      // Find team member name
-      const teamMember = intercomTeamMembers.find(m => String(m.id) === idStr)
-      const name = teamMember?.name || `TSE ${idStr}`
-      
-      // Skip excluded TSEs
-      if (EXCLUDED_TSE_NAMES.includes(name)) return
-      
-      // Initialize TSE entry if not exists
-      if (!tseMap.has(idStr)) {
-        tseMap.set(idStr, { name, count: 0 })
-      }
-      
-      // Count closed today
-      if (isClosedToday(conv)) {
-        const entry = tseMap.get(idStr)!
-        entry.count++
-      }
-    })
-    
-    // Sum all closed across all TSEs
-    const totalCount = Array.from(tseMap.values()).reduce((sum, data) => sum + data.count, 0)
-    
-    console.log('[AvailabilityPlugin] Total closed today (from table data):', totalCount)
-    return totalCount
-  }, [intercomConversations, intercomTeamMembers])
+    console.log('[AvailabilityPlugin] Total closed today (all conversations):', closedCount)
+    return closedCount
+  }, [intercomConversations])
   
   // =================================================================
   // HISTORICAL METRICS - Fetch previous days data for trending
