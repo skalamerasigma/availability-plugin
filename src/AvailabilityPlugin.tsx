@@ -1914,18 +1914,24 @@ export function AvailabilityPlugin() {
         console.log('[AvailabilityPlugin] Historical metrics received:', metrics.length, 'records')
         
         if (metrics.length > 0) {
-          // Metrics are ordered by date DESC, so first one is most recent
-          const mostRecentMetric = metrics[0]
+          // Metrics are ordered by date DESC
+          // Find the most recent record with meaningful data (skip weekends/low-activity days)
+          // A "meaningful" day should have at least 50 conversations
+          const MIN_CONVERSATIONS_THRESHOLD = 50
           
-          console.log('[AvailabilityPlugin] Most recent metric:', {
-            date: mostRecentMetric.date,
-            totalConversations: mostRecentMetric.totalConversations,
-            totalClosed: mostRecentMetric.totalClosed
+          const meaningfulMetric = metrics.find(
+            (m: { totalConversations?: number }) => (m.totalConversations ?? 0) >= MIN_CONVERSATIONS_THRESHOLD
+          ) || metrics[0] // Fallback to most recent if none meet threshold
+          
+          console.log('[AvailabilityPlugin] Selected metric (skipping low-activity days):', {
+            date: meaningfulMetric.date,
+            totalConversations: meaningfulMetric.totalConversations,
+            totalClosed: meaningfulMetric.totalClosed
           })
           
           setHistoricalMetrics({
-            yesterdayChats: mostRecentMetric.totalConversations ?? null,
-            yesterdayClosed: mostRecentMetric.totalClosed ?? null,
+            yesterdayChats: meaningfulMetric.totalConversations ?? null,
+            yesterdayClosed: meaningfulMetric.totalClosed ?? null,
             weekAgoChats: metrics.length > 7 ? metrics[7]?.totalConversations ?? null : null,
             loading: false
           })
