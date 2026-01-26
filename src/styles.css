@@ -1455,6 +1455,7 @@ body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 4px rgba(2, 141, 255, 0.3);
+  border: 2px solid #fff;
 }
 
 .zoom-label {
