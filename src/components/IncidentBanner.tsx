@@ -16,6 +16,7 @@ interface IncidentBannerProps {
   chatCount?: number
   closedCount?: number
   chatsTrending?: TrendingData | null
+  previousClosed?: number | null
 }
 
 interface Incident {
@@ -38,6 +39,7 @@ export function IncidentBanner({
   chatCount,
   closedCount,
   chatsTrending,
+  previousClosed,
 }: IncidentBannerProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
 
@@ -330,6 +332,11 @@ export function IncidentBanner({
                     {closedCount}
                   </div>
                   <div className="tse-status-banner-label">Closed Today</div>
+                  {previousClosed !== undefined && previousClosed !== null && (
+                    <div className="tse-status-banner-yesterday">
+                      {previousClosed} prev day
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -1883,10 +1883,12 @@ export function AvailabilityPlugin() {
   // =================================================================
   const [historicalMetrics, setHistoricalMetrics] = useState<{
     yesterdayChats: number | null
+    yesterdayClosed: number | null
     weekAgoChats: number | null
     loading: boolean
   }>({
     yesterdayChats: null,
+    yesterdayClosed: null,
     weekAgoChats: null,
     loading: true
   })
@@ -1917,11 +1919,13 @@ export function AvailabilityPlugin() {
           
           console.log('[AvailabilityPlugin] Most recent metric:', {
             date: mostRecentMetric.date,
-            totalConversations: mostRecentMetric.totalConversations
+            totalConversations: mostRecentMetric.totalConversations,
+            totalClosed: mostRecentMetric.totalClosed
           })
           
           setHistoricalMetrics({
             yesterdayChats: mostRecentMetric.totalConversations ?? null,
+            yesterdayClosed: mostRecentMetric.totalClosed ?? null,
             weekAgoChats: metrics.length > 7 ? metrics[7]?.totalConversations ?? null : null,
             loading: false
           })
@@ -1929,6 +1933,7 @@ export function AvailabilityPlugin() {
           console.log('[AvailabilityPlugin] No historical metrics available')
           setHistoricalMetrics({
             yesterdayChats: null,
+            yesterdayClosed: null,
             weekAgoChats: null,
             loading: false
           })
@@ -1937,6 +1942,7 @@ export function AvailabilityPlugin() {
         console.error('[AvailabilityPlugin] Error fetching historical metrics:', error)
         setHistoricalMetrics({
           yesterdayChats: null,
+          yesterdayClosed: null,
           weekAgoChats: null,
           loading: false
         })
@@ -3367,6 +3373,7 @@ export function AvailabilityPlugin() {
         chatCount={totalChatsTakenToday}
         closedCount={totalClosedToday}
         chatsTrending={chatsTrending}
+        previousClosed={historicalMetrics.yesterdayClosed}
       />
       <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}
