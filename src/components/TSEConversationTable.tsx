@@ -74,8 +74,11 @@ const EXCLUDED_TSE_NAMES = [
   'Holly',
   'Holly Coxon',
   'Stephen',
+  'Stephen Skalamera',
   'Grace',
+  'Grace Liu',
   'Zen',
+  'Zen Lee',
   'Chetana',
   'Chetana Shinde',
   'svc-prd-tse-intercom SVC',
@@ -89,6 +92,19 @@ const EXCLUDED_TSE_NAMES = [
 function getFirstName(fullName: string): string {
   if (!fullName) return fullName
   return fullName.split(' ')[0]
+}
+
+/**
+ * Check if a name should be excluded (checks both full name and first name)
+ */
+function isExcludedTSE(name: string): boolean {
+  if (!name) return false
+  // Check exact match
+  if (EXCLUDED_TSE_NAMES.includes(name)) return true
+  // Check first name match
+  const firstName = getFirstName(name)
+  if (EXCLUDED_TSE_NAMES.includes(firstName)) return true
+  return false
 }
 
 /**
@@ -188,7 +204,7 @@ function calculateTSECountsFromIntercom(
       const name = teamMember?.name || `TSE ${idStr}`
       
       // Skip excluded TSEs
-      if (EXCLUDED_TSE_NAMES.includes(name)) return
+      if (isExcludedTSE(name)) return
       
       tseMap.set(idStr, { 
         name,
@@ -229,7 +245,7 @@ function calculateTSECountsFromIntercom(
   
   // Convert to array
   const result: TSEConversationData[] = Array.from(tseMap.entries())
-    .filter(([_, item]) => !EXCLUDED_TSE_NAMES.includes(item.name))
+    .filter(([_, item]) => !isExcludedTSE(item.name))
     .map(([id, item]) => ({
       tseName: getFirstName(item.name),
       fullName: item.name,
@@ -470,7 +486,7 @@ function TSEDetailsModal({
 // Generate mock conversation data for TSEs (fallback)
 function generateMockConversationData(): TSEConversationData[] {
   const tseNames = TEAM_MEMBERS
-    .filter(member => !EXCLUDED_TSE_NAMES.includes(member.name))
+    .filter(member => !isExcludedTSE(member.name))
   
   return tseNames.map((member, idx) => {
     const random = Math.random()
@@ -581,7 +597,7 @@ export function TSEConversationTable({
         if (!item.tse || !item.tse.trim()) return
         
         const cleanName = item.tse.trim()
-        if (EXCLUDED_TSE_NAMES.includes(cleanName)) return
+        if (isExcludedTSE(cleanName)) return
         
         processedData.push({
           tseName: getFirstName(cleanName),
@@ -608,7 +624,7 @@ export function TSEConversationTable({
       setError(err instanceof Error ? err.message : 'Failed to fetch')
       
       // Fallback to mock data on error
-      const filteredData = mockData.filter(row => !EXCLUDED_TSE_NAMES.includes(row.tseName))
+      const filteredData = mockData.filter(row => !isExcludedTSE(row.tseName) && !isExcludedTSE(row.fullName))
       const sortedData = filteredData.sort((a, b) => {
         const sumA = a.openCount + a.snoozedCount
         const sumB = b.openCount + b.snoozedCount
