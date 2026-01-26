@@ -451,7 +451,7 @@ function TSEDetailsModal({
             <div className="tse-modal-stat-value" style={{ color: '#3b82f6' }}>
               {taken.length}
             </div>
-            <div className="tse-modal-stat-label">Taken Today</div>
+            <div className="tse-modal-stat-label">Assigned Today</div>
           </div>
         </div>
         
@@ -812,7 +812,7 @@ export function TSEConversationTable({
               whiteSpace: 'nowrap',
               minWidth: '60px'
             }}>
-              Taken
+              Assigned
             </th>
           </tr>
         </thead>
