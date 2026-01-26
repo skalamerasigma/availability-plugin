@@ -57,6 +57,8 @@ interface TSEConversationTableProps {
 
 // TSEs to exclude from the table
 const EXCLUDED_TSE_NAMES = [
+  'Holly',
+  'Holly Coxon',
   'Stephen',
   'Grace',
   'Zen',

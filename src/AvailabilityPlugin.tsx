@@ -1748,6 +1748,8 @@ export function AvailabilityPlugin() {
   
   // TSEs to exclude from the count (same as TSEConversationTable)
   const EXCLUDED_TSE_NAMES = [
+    'Holly',
+    'Holly Coxon',
     'Stephen',
     'Grace',
     'Zen',
