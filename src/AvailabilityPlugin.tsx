@@ -482,6 +482,7 @@ function getMockUnassignedConversations(nowSeconds: number): any[] {
 
 interface ResoQueueBeltProps {
   unassignedConvs: any[]
+  chatsTodayCount: number
 }
 
 function isConversationUnassigned(conversation: any): boolean {
@@ -492,7 +493,7 @@ function isConversationUnassigned(conversation: any): boolean {
   return !hasAssigneeId && !hasAssigneeObject
 }
 
-function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
+function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps) {
   const [conveyorBeltCurrentTime, setConveyorBeltCurrentTime] = useState(() => Date.now() / 1000)
   const [showBreachedModal, setShowBreachedModal] = useState(false)
   const [selectedConversation, setSelectedConversation] = useState<any | null>(null)
@@ -1059,22 +1060,9 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
               return true
             })
 
-            // Calculate total conversations received for the day (between 10 AM UTC and 2 AM UTC next day)
-            const totalConvsForDay = unassignedConvs.filter((conv) => {
-              const convId = conv.id || conv.conversation_id
-              const createdTimestamp = conv.createdTimestamp
-              if (!createdTimestamp) return false
-              // Skip timestamp filters for mock conversations
-              if (convId && String(convId).startsWith('mock-')) return true
-              // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
-              if (createdTimestamp < lastBreachResetTimestamp) return false
-              if (createdTimestamp >= cutoffTimestamp) return false
-              return true
-            }).length
-
-            // Calculate percentage of conversations received for the day that breached
-            const breachedPercentage = totalConvsForDay > 0 
-              ? Math.round((confirmedBreachedConvs.length / totalConvsForDay) * 100)
+            // Calculate percentage of conversations that breached using Chats Today as denominator
+            const breachedPercentage = chatsTodayCount > 0 
+              ? Math.round((confirmedBreachedConvs.length / chatsTodayCount) * 100)
               : 0
 
             // Color based on breached status - green when 0%, red when > 0%
@@ -1108,7 +1096,7 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
                     e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
                   }}
                   title={confirmedBreachedConvs.length > 0 
-                    ? `${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${totalConvsForDay}) - Click to view`
+                    ? `${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${chatsTodayCount} chats today) - Click to view`
                     : `0% breached - No 10+ min waits today!`
                   }
                 >
@@ -1132,7 +1120,7 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
                     marginTop: '4px',
                     maxWidth: '80px'
                   }}>
-                    {confirmedBreachedConvs.length}/{totalConvsForDay} 10+ min waits today
+                    {confirmedBreachedConvs.length}/{chatsTodayCount} 10+ min waits today
                   </div>
                 </div>
               </>
@@ -3447,7 +3435,7 @@ export function AvailabilityPlugin() {
                 Last updated: {formatLastUpdated(lastUpdated)}
               </div>
             </div>
-            <ResoQueueBelt unassignedConvs={unassignedConvs} />
+            <ResoQueueBelt unassignedConvs={unassignedConvs} chatsTodayCount={totalChatsTakenToday} />
 
             <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
               <div style={{ flex: 1, width: '100%', minWidth: 0 }}>
