@@ -3,10 +3,24 @@ import { TEAM_MEMBERS } from '../data/teamMembers'
 
 interface TSEConversationData {
   tseName: string
+  fullName: string
+  tseId: string
   openCount: number
   snoozedCount: number
   closedCount: number
   chatsTakenCount: number
+}
+
+interface TSEDetailData {
+  name: string
+  fullName: string
+  id: string
+  avatar: string
+  region: string
+  open: IntercomConversation[]
+  snoozed: IntercomConversation[]
+  closed: IntercomConversation[]
+  taken: IntercomConversation[]
 }
 
 // Intercom conversation type (from useIntercomData hook)
@@ -153,6 +167,7 @@ function calculateTSECountsFromIntercom(
   // Group conversations by admin_assignee_id
   const tseMap = new Map<string, { 
     name: string
+    id: string
     open: number
     snoozed: number
     closed: number
@@ -177,6 +192,7 @@ function calculateTSECountsFromIntercom(
       
       tseMap.set(idStr, { 
         name,
+        id: idStr,
         open: 0, 
         snoozed: 0, 
         closed: 0,
@@ -212,10 +228,12 @@ function calculateTSECountsFromIntercom(
   })
   
   // Convert to array
-  const result: TSEConversationData[] = Array.from(tseMap.values())
-    .filter(item => !EXCLUDED_TSE_NAMES.includes(item.name))
-    .map(item => ({
+  const result: TSEConversationData[] = Array.from(tseMap.entries())
+    .filter(([_, item]) => !EXCLUDED_TSE_NAMES.includes(item.name))
+    .map(([id, item]) => ({
       tseName: getFirstName(item.name),
+      fullName: item.name,
+      tseId: id,
       openCount: item.open,
       snoozedCount: item.snoozed,
       closedCount: item.closed,
@@ -228,13 +246,233 @@ function calculateTSECountsFromIntercom(
   return result
 }
 
+/**
+ * Get TSE conversations grouped by category
+ */
+function getTSEConversations(
+  tseId: string,
+  tseName: string,
+  conversations: IntercomConversation[]
+): TSEDetailData {
+  const teamMember = TEAM_MEMBERS.find(m => 
+    m.name.toLowerCase() === tseName.toLowerCase() ||
+    m.name.toLowerCase() === getFirstName(tseName).toLowerCase()
+  )
+  
+  const avatar = teamMember?.avatar || ''
+  const timezone = teamMember?.timezone || ''
+  let region = 'Other'
+  if (timezone.includes('New_York')) region = 'New York'
+  else if (timezone.includes('Los_Angeles')) region = 'San Francisco'
+  else if (timezone.includes('London')) region = 'UK'
+  
+  const open: IntercomConversation[] = []
+  const snoozed: IntercomConversation[] = []
+  const closed: IntercomConversation[] = []
+  const taken: IntercomConversation[] = []
+  
+  conversations.forEach(conv => {
+    const assigneeId = conv.admin_assignee_id || 
+      (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
+    
+    if (String(assigneeId) !== tseId) return
+    
+    const state = (conv.state || 'open').toLowerCase()
+    const isSnoozed = state === 'snoozed' || conv.snoozed_until
+    
+    if (state === 'open' && !isSnoozed) {
+      open.push(conv)
+    } else if (isSnoozed) {
+      if (!hasWaitingOnCustomerTag(conv)) {
+        snoozed.push(conv)
+      }
+    } else if (state === 'closed' && isClosedToday(conv)) {
+      closed.push(conv)
+    }
+    
+    if (isChatTakenToday(conv)) {
+      taken.push(conv)
+    }
+  })
+  
+  return {
+    name: getFirstName(tseName),
+    fullName: tseName,
+    id: tseId,
+    avatar,
+    region,
+    open,
+    snoozed,
+    closed,
+    taken
+  }
+}
+
+// Intercom base URL for linking conversations
+const INTERCOM_BASE_URL = "https://app.intercom.com/a/inbox/gu1e0q0t/inbox/admin/8857114/conversation/"
+
+/**
+ * Format a timestamp for display
+ */
+function formatConversationDate(timestamp: number | undefined): string {
+  if (!timestamp) return '-'
+  const ms = timestamp > 1e12 ? timestamp : timestamp * 1000
+  const date = new Date(ms)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC'
+  }) + ' UTC'
+}
+
+/**
+ * TSE Details Modal Component
+ */
+function TSEDetailsModal({ 
+  tseData, 
+  onClose 
+}: { 
+  tseData: TSEDetailData
+  onClose: () => void 
+}) {
+  const { name, fullName, avatar, region, open, snoozed, closed, taken } = tseData
+  
+  // Get author email from conversation
+  const getAuthorEmail = (conv: IntercomConversation): string => {
+    const source = conv as any
+    return source.source?.author?.email || 
+           source.source?.email || 
+           source.author?.email ||
+           source.conversation_message?.author?.email ||
+           '-'
+  }
+  
+  // Render conversation list
+  const renderConversationList = (convs: IntercomConversation[], emptyMessage: string) => {
+    if (!convs || convs.length === 0) {
+      return <div className="tse-modal-empty">{emptyMessage}</div>
+    }
+    
+    return (
+      <div className="tse-modal-conversation-list">
+        {convs.map((conv, idx) => {
+          const convId = conv.id || conv.conversation_id
+          const authorEmail = getAuthorEmail(conv)
+          const created = formatConversationDate(conv.created_at)
+          
+          return (
+            <div key={convId || idx} className="tse-modal-conversation-item">
+              <img 
+                src="https://res.cloudinary.com/doznvxtja/image/upload/v1767370490/Untitled_design_14_wkkhe3.svg"
+                alt="Intercom"
+                className="tse-modal-conv-icon"
+              />
+              <div className="tse-modal-conv-content">
+                <div className="tse-modal-conv-header">
+                  <a 
+                    href={`${INTERCOM_BASE_URL}${convId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="tse-modal-conv-id-link"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {convId}
+                  </a>
+                  <span className="tse-modal-conv-date">{created}</span>
+                </div>
+                <div className="tse-modal-conv-email">{authorEmail}</div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <div className="tse-modal-overlay" onClick={onClose}>
+      <div className="tse-modal-content" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="tse-modal-header">
+          <div className="tse-modal-header-left">
+            {avatar && (
+              <img src={avatar} alt={name} className="tse-modal-avatar" />
+            )}
+            <div className="tse-modal-header-info">
+              <h2 className="tse-modal-title">{fullName}</h2>
+              <div className="tse-modal-region">
+                <span className="tse-modal-region-text">{region}</span>
+              </div>
+            </div>
+          </div>
+          <button className="tse-modal-close" onClick={onClose}>×</button>
+        </div>
+        
+        {/* Stats Summary */}
+        <div className="tse-modal-stats">
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: open.length > 5 ? '#ef4444' : open.length >= 3 ? '#eab308' : '#22c55e' }}>
+              {open.length}
+            </div>
+            <div className="tse-modal-stat-label">Open</div>
+          </div>
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: snoozed.length > 5 ? '#ef4444' : snoozed.length >= 3 ? '#eab308' : '#22c55e' }}>
+              {snoozed.length}
+            </div>
+            <div className="tse-modal-stat-label">Snoozed</div>
+          </div>
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: '#6b7280' }}>
+              {closed.length}
+            </div>
+            <div className="tse-modal-stat-label">Closed Today</div>
+          </div>
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: '#3b82f6' }}>
+              {taken.length}
+            </div>
+            <div className="tse-modal-stat-label">Taken Today</div>
+          </div>
+        </div>
+        
+        {/* Conversation Lists */}
+        <div className="tse-modal-body">
+          <div className="tse-modal-section">
+            <h3 className="tse-modal-section-title">
+              Open Conversations <span className="tse-modal-section-count">({open.length})</span>
+            </h3>
+            {renderConversationList(open, 'No conversations')}
+          </div>
+          
+          <div className="tse-modal-section">
+            <h3 className="tse-modal-section-title">
+              Snoozed - Waiting On TSE <span className="tse-modal-section-count">({snoozed.length})</span>
+            </h3>
+            {renderConversationList(snoozed, 'No conversations')}
+          </div>
+          
+          <div className="tse-modal-section">
+            <h3 className="tse-modal-section-title">
+              Total Snoozed <span className="tse-modal-section-count">({snoozed.length})</span>
+            </h3>
+            {renderConversationList(snoozed, 'No conversations')}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Generate mock conversation data for TSEs (fallback)
 function generateMockConversationData(): TSEConversationData[] {
   const tseNames = TEAM_MEMBERS
-    .map(member => member.name)
-    .filter(name => !EXCLUDED_TSE_NAMES.includes(name))
+    .filter(member => !EXCLUDED_TSE_NAMES.includes(member.name))
   
-  return tseNames.map(name => {
+  return tseNames.map((member, idx) => {
     const random = Math.random()
     let openCount: number
     let snoozedCount: number
@@ -257,7 +495,9 @@ function generateMockConversationData(): TSEConversationData[] {
     const chatsTakenCount = Math.floor(Math.random() * 5) + closedCount
     
     return {
-      tseName: name,
+      tseName: member.name,
+      fullName: member.name,
+      tseId: member.id || `mock-${idx}`,
       openCount,
       snoozedCount,
       closedCount,
@@ -284,6 +524,8 @@ export function TSEConversationTable({
   const [currentHalf, setCurrentHalf] = useState<0 | 1>(0)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [_error, setError] = useState<string | null>(null)
+  const [selectedTSE, setSelectedTSE] = useState<TSEDetailData | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
   
   // Generate mock data as fallback
   const mockData = useMemo(() => generateMockConversationData(), [])
@@ -342,7 +584,9 @@ export function TSEConversationTable({
         if (EXCLUDED_TSE_NAMES.includes(cleanName)) return
         
         processedData.push({
-          tseName: cleanName,
+          tseName: getFirstName(cleanName),
+          fullName: cleanName,
+          tseId: item.id || `api-${cleanName}`,
           openCount: item.open || 0,
           snoozedCount: item.snoozed || 0,
           closedCount: item.closed || 0,
@@ -432,6 +676,26 @@ export function TSEConversationTable({
     if (value > 5) return '#ef4444' // red
     if (value >= 3) return '#eab308' // yellow
     return '#22c55e' // green
+  }
+  
+  // Handle TSE name click
+  const handleTSEClick = (row: TSEConversationData) => {
+    if (!intercomConversations) return
+    
+    const tseData = getTSEConversations(
+      row.tseId,
+      row.fullName || row.tseName,
+      intercomConversations
+    )
+    
+    setSelectedTSE(tseData)
+    setIsModalOpen(true)
+  }
+  
+  // Close modal
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setSelectedTSE(null)
   }
 
   if (loading && conversationData.length === 0) {
@@ -546,16 +810,31 @@ export function TSEConversationTable({
                 transition: 'opacity 0.3s ease-in-out'
               }}
             >
-              <td style={{
-                padding: '8px 8px',
-                color: '#111827',
-                fontWeight: 500,
-                fontSize: '16px',
-                maxWidth: '80px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}>
+              <td 
+                style={{
+                  padding: '8px 8px',
+                  color: '#3b82f6',
+                  fontWeight: 500,
+                  fontSize: '16px',
+                  maxWidth: '80px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  cursor: intercomConversations ? 'pointer' : 'default',
+                  transition: 'color 0.15s ease'
+                }}
+                onClick={() => handleTSEClick(row)}
+                onMouseEnter={(e) => {
+                  if (intercomConversations) {
+                    e.currentTarget.style.color = '#1d4ed8'
+                    e.currentTarget.style.textDecoration = 'underline'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = '#3b82f6'
+                  e.currentTarget.style.textDecoration = 'none'
+                }}
+              >
                 {row.tseName}
               </td>
               <td style={{
@@ -611,6 +890,14 @@ export function TSEConversationTable({
         }}>
           Updated {formatLastUpdated(lastUpdated)}
         </div>
+      )}
+      
+      {/* TSE Details Modal */}
+      {isModalOpen && selectedTSE && (
+        <TSEDetailsModal 
+          tseData={selectedTSE}
+          onClose={handleCloseModal}
+        />
       )}
     </div>
   )

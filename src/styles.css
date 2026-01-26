@@ -1151,3 +1151,260 @@ body {
     font-size: 12px;
   }
 }
+
+/* =============================================
+   TSE Details Modal Styles
+   ============================================= */
+
+.tse-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tse-modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: slideUp 0.3s ease-out;
+}
+
+.tse-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f3f4f6;
+  background: linear-gradient(to bottom, #fafbfc, #fff);
+}
+
+.tse-modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tse-modal-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tse-modal-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tse-modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.tse-modal-region {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tse-modal-region-text {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.tse-modal-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: #f3f4f6;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #6b7280;
+  transition: all 0.15s ease;
+}
+
+.tse-modal-close:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+/* Stats Summary */
+.tse-modal-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: #f3f4f6;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.tse-modal-stat {
+  background: #fff;
+  padding: 16px;
+  text-align: center;
+}
+
+.tse-modal-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.tse-modal-stat-label {
+  font-size: 11px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* Modal Body */
+.tse-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.tse-modal-section {
+  margin-bottom: 24px;
+}
+
+.tse-modal-section:last-child {
+  margin-bottom: 0;
+}
+
+.tse-modal-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tse-modal-section-count {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+/* Conversation List */
+.tse-modal-conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tse-modal-conversation-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: #fafbfc;
+  border-radius: 10px;
+  border: 1px solid #f3f4f6;
+  transition: all 0.15s ease;
+}
+
+.tse-modal-conversation-item:hover {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+.tse-modal-conv-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.tse-modal-conv-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.tse-modal-conv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.tse-modal-conv-id-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3b82f6;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.tse-modal-conv-id-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.tse-modal-conv-date {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.tse-modal-conv-email {
+  font-size: 13px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tse-modal-empty {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  font-style: italic;
+  padding: 16px;
+  background: #fafbfc;
+  border-radius: 8px;
+  border: 1px dashed #e5e7eb;
+}
