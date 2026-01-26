@@ -968,6 +968,41 @@ body {
   gap: 8px;
 }
 
+/* No Incidents State */
+.incident-banner-no-incidents {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.no-incidents-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: fit-content;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+}
+
+.no-incidents-badge svg {
+  flex-shrink: 0;
+}
+
+.no-incidents-message {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
 .incident-banner-header {
   display: flex;
   align-items: center;

@@ -264,15 +264,10 @@ export function IncidentBanner({
     return () => clearInterval(interval)
   }, [activeIncidents.length])
 
-  // Don't render if no active incidents
-  if (activeIncidents.length === 0) {
-    console.log('[IncidentBanner] No active incidents, not rendering')
-    return null
-  }
-
   console.log('[IncidentBanner] Rendering banner with', activeIncidents.length, 'incidents')
 
-  const currentIncident = activeIncidents[currentIndex]
+  const currentIncident = activeIncidents.length > 0 ? activeIncidents[currentIndex] : null
+  const hasIncidents = activeIncidents.length > 0
 
   // Format timestamps for display
   const formatTimestamp = (timestampStr: string | number): string => {
@@ -336,7 +331,7 @@ export function IncidentBanner({
     return '#6366f1' // default purple/blue
   }
 
-  const severityColor = getSeverityColor(currentIncident.sevStatus)
+  const severityColor = currentIncident ? getSeverityColor(currentIncident.sevStatus) : '#10b981'
 
   return (
     <div className="incident-banner">
@@ -436,39 +431,55 @@ export function IncidentBanner({
 
           {/* Incident Info */}
           <div className="incident-banner-details">
-            <div className="incident-banner-header">
-              <span
-                className="incident-banner-severity"
-                style={{ backgroundColor: severityColor }}
-              >
-                {currentIncident.sevStatus || 'ACTIVE INCIDENT'}
-              </span>
-              {activeIncidents.length > 1 && (
-                <span className="incident-banner-counter">
-                  {currentIndex + 1} / {activeIncidents.length}
-                </span>
-              )}
-            </div>
-            <div className="incident-banner-title">{currentIncident.incidentDetails}</div>
-            <div className="incident-banner-meta">
-              {currentIncident.incidentCreatedAt && (
-                <span className="incident-meta-item">
-                  Created: {formatTimestamp(currentIncident.incidentCreatedAt)}
-                </span>
-              )}
-              {currentIncident.incidentCreatedAt && currentIncident.incidentUpdatedAt && (
-                <span className="incident-meta-separator">•</span>
-              )}
-              {currentIncident.incidentUpdatedAt && (
-                <span className="incident-meta-item">
-                  Updated: {formatTimestamp(currentIncident.incidentUpdatedAt)}
-                </span>
-              )}
-            </div>
+            {hasIncidents && currentIncident ? (
+              <>
+                <div className="incident-banner-header">
+                  <span
+                    className="incident-banner-severity"
+                    style={{ backgroundColor: severityColor }}
+                  >
+                    {currentIncident.sevStatus || 'ACTIVE INCIDENT'}
+                  </span>
+                  {activeIncidents.length > 1 && (
+                    <span className="incident-banner-counter">
+                      {currentIndex + 1} / {activeIncidents.length}
+                    </span>
+                  )}
+                </div>
+                <div className="incident-banner-title">{currentIncident.incidentDetails}</div>
+                <div className="incident-banner-meta">
+                  {currentIncident.incidentCreatedAt && (
+                    <span className="incident-meta-item">
+                      Created: {formatTimestamp(currentIncident.incidentCreatedAt)}
+                    </span>
+                  )}
+                  {currentIncident.incidentCreatedAt && currentIncident.incidentUpdatedAt && (
+                    <span className="incident-meta-separator">•</span>
+                  )}
+                  {currentIncident.incidentUpdatedAt && (
+                    <span className="incident-meta-item">
+                      Updated: {formatTimestamp(currentIncident.incidentUpdatedAt)}
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="incident-banner-no-incidents">
+                <div className="no-incidents-badge">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8 0C3.58 0 0 3.58 0 8C0 12.42 3.58 16 8 16C12.42 16 16 12.42 16 8C16 3.58 12.42 0 8 0ZM7 11.4L3.6 8L5 6.6L7 8.6L11 4.6L12.4 6L7 11.4Z" fill="currentColor"/>
+                  </svg>
+                  <span>All Clear</span>
+                </div>
+                <div className="no-incidents-message">
+                  No SEV1 Incidents Reported Within The Last 72hrs
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Progress indicator for rotation */}
-          {activeIncidents.length > 1 && (
+          {hasIncidents && activeIncidents.length > 1 && (
             <div className="incident-banner-progress">
               {activeIncidents.map((_, index) => (
                 <div
