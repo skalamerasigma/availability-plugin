@@ -214,6 +214,20 @@ client.config.configureEditorPanel([
     allowMultiple: false,
   },
 
+  // === IR (INITIAL RESPONSE) DATA SOURCE CONFIGURATION ===
+  // Connect to the IR Plugin view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.IR_PLUGIN)
+  // This view contains conversation data with ADJUSTED_IR_S for median calculation
+  {
+    name: 'irSource',
+    type: 'element',
+  },
+  {
+    name: 'irAdjustedIrS',
+    type: 'column',
+    source: 'irSource',
+    allowMultiple: false,
+  },
+
   // === INCIDENTS DATA SOURCE CONFIGURATION ===
   // Connect to the Incidents view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.ALL_INCIDENTS_EXPLODED_API_RESPONSE)
   {
@@ -1715,7 +1729,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 8.12 - Added median response time metric + fly-away animation')
+  console.log('🚀 PLUGIN VERSION: 8.13 - Median IR from warehouse (IR_PLUGIN.ADJUSTED_IR_S)')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
@@ -1735,6 +1749,7 @@ export function AvailabilityPlugin() {
   const activeTSEsElementId = config.activeTSEsSource as string
   const awayTSEsElementId = config.awayTSEsSource as string
   const tseConversationElementId = config.tseConversationSource as string
+  const irElementId = config.irSource as string
   
   // Debug: Log element IDs immediately after extraction
   console.log('🔍 [AvailabilityPlugin] Element IDs from config:')
@@ -1753,6 +1768,7 @@ export function AvailabilityPlugin() {
   const activeTSEsColumns = useElementColumns(activeTSEsElementId)
   const awayTSEsColumns = useElementColumns(awayTSEsElementId)
   const tseConversationColumns = useElementColumns(tseConversationElementId)
+  // IR columns not needed - we get column ID directly from config.irAdjustedIrS
   
   // Get actual data from the connected Sigma worksheets using element IDs
   // Note: useElementData may return undefined if element ID is undefined, or empty object {} if element is connected but has no data
@@ -1767,6 +1783,7 @@ export function AvailabilityPlugin() {
   const activeTSEsData = activeTSEsElementId ? useElementData(activeTSEsElementId) : undefined
   const awayTSEsData = awayTSEsElementId ? useElementData(awayTSEsElementId) : undefined
   const tseConversationData = tseConversationElementId ? useElementData(tseConversationElementId) : undefined
+  const irData = irElementId ? useElementData(irElementId) : undefined
   
   // Debug: Log what useElementData returns immediately
   console.log('🔍 [AvailabilityPlugin] useElementData results:')
@@ -2155,69 +2172,47 @@ export function AvailabilityPlugin() {
   }, [intercomConversations])
   
   // =================================================================
-  // MEDIAN INITIAL RESPONSE TIME (from Intercom data)
-  // Calculates the median time from conversation created to first admin reply
-  // Only considers conversations with both created_at and first_admin_reply_at
+  // MEDIAN INITIAL RESPONSE TIME (from Sigma warehouse - IR_PLUGIN view)
+  // Reads ADJUSTED_IR_S column from SIGMA_ON_SIGMA.SIGMA_WRITABLE.IR_PLUGIN
+  // The view is already filtered to today's conversations
   // =================================================================
   const medianResponseTime = useMemo(() => {
-    if (!intercomConversations.length) return null
+    // Get the column ID for ADJUSTED_IR_S from config
+    const irColumnId = config.irAdjustedIrS as string
     
-    // Helper to check if timestamp is today (PT timezone)
-    const isToday = (timestamp: number | undefined): boolean => {
-      if (!timestamp) return false
-      const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000
-      const date = new Date(timestampMs)
-      const now = new Date()
-      const ptFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Los_Angeles',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
+    if (!irData || !irColumnId) {
+      console.log('[AvailabilityPlugin] Median IR: No IR data or column ID', { 
+        hasIrData: !!irData, 
+        irColumnId,
+        irDataKeys: irData ? Object.keys(irData) : []
       })
-      return ptFormatter.format(now) === ptFormatter.format(date)
+      return null
     }
     
-    // Collect response times for all conversations created today that have first admin reply
-    const responseTimes: number[] = []
-    let debugCounts = { total: 0, createdToday: 0, hasReply: 0, validTime: 0 }
+    // Get the array of ADJUSTED_IR_S values from the data
+    const irValues = irData[irColumnId] as (number | null | undefined)[]
     
-    intercomConversations.forEach(conv => {
-      debugCounts.total++
-      const createdAt = conv.created_at
-      const firstAdminReplyAt = conv.statistics?.first_admin_reply_at
-      
-      // Only consider conversations created today
-      if (!createdAt || !isToday(createdAt)) return
-      debugCounts.createdToday++
-      
-      // Must have first admin reply timestamp
-      if (!firstAdminReplyAt) return
-      debugCounts.hasReply++
-      
-      // Calculate response time in seconds
-      const responseTimeSeconds = firstAdminReplyAt - createdAt
-      
-      // Sanity check: response time should be positive and reasonable (< 24 hours)
-      if (responseTimeSeconds > 0 && responseTimeSeconds < 86400) {
-        debugCounts.validTime++
-        responseTimes.push(responseTimeSeconds)
+    if (!irValues || !Array.isArray(irValues) || irValues.length === 0) {
+      console.log('[AvailabilityPlugin] Median IR: No values found', {
+        irColumnId,
+        irValuesType: typeof irValues,
+        isArray: Array.isArray(irValues)
+      })
+      return null
+    }
+    
+    // Filter out null/undefined values and collect valid response times
+    const responseTimes: number[] = []
+    irValues.forEach(val => {
+      if (val !== null && val !== undefined && typeof val === 'number' && val > 0 && val < 86400) {
+        responseTimes.push(val)
       }
     })
     
-    console.log('[AvailabilityPlugin] Median response time debug:', debugCounts)
-    console.log('[AvailabilityPlugin] Response times collected:', responseTimes.length)
-    
-    // Debug: Log sample conversations to see if they have statistics
-    if (intercomConversations.length > 0) {
-      const sample = intercomConversations.slice(0, 3).map(c => ({
-        id: c.id,
-        created_at: c.created_at,
-        state: c.state,
-        hasStatistics: !!c.statistics,
-        first_admin_reply_at: c.statistics?.first_admin_reply_at
-      }))
-      console.log('[AvailabilityPlugin] Sample conversations:', sample)
-    }
+    console.log('[AvailabilityPlugin] Median IR from warehouse:', {
+      totalRows: irValues.length,
+      validValues: responseTimes.length
+    })
     
     if (responseTimes.length === 0) return null
     
@@ -2230,9 +2225,9 @@ export function AvailabilityPlugin() {
       ? (responseTimes[mid - 1] + responseTimes[mid]) / 2
       : responseTimes[mid]
     
-    console.log('[AvailabilityPlugin] Median response time:', Math.round(median), 'seconds')
+    console.log('[AvailabilityPlugin] Median response time:', Math.round(median), 'seconds from', responseTimes.length, 'conversations')
     return Math.round(median)
-  }, [intercomConversations])
+  }, [irData, config.irAdjustedIrS])
   
   // =================================================================
   // HISTORICAL METRICS - Fetch previous days data for trending
