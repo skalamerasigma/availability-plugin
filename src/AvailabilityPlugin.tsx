@@ -3058,7 +3058,9 @@ export function AvailabilityPlugin() {
         }
       })
     })
-    return count
+    // In local dev, show minimum of 2 for testing
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    return isLocalDev ? Math.max(count, 2) : count
   }, [agentsByCity])
 
   // Extract OOO agents when schedule data is available
