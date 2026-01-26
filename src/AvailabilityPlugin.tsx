@@ -1072,25 +1072,26 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
               return true
             }).length
 
-            if (confirmedBreachedConvs.length === 0) return null
-
             // Calculate percentage of conversations received for the day that breached
             const breachedPercentage = totalConvsForDay > 0 
               ? Math.round((confirmedBreachedConvs.length / totalConvsForDay) * 100)
               : 0
 
+            // Color based on breached status - green when 0%, red when > 0%
+            const breachedColor = confirmedBreachedConvs.length === 0 ? '#10b981' : '#d84c4c'
+
             return (
               <>
                 {/* Breached percentage - Right Side */}
                 <div
-                  onClick={() => setShowBreachedModal(true)}
+                  onClick={() => confirmedBreachedConvs.length > 0 && setShowBreachedModal(true)}
                   style={{
                     position: 'absolute',
                     right: '0px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     zIndex: 15,
-                    cursor: 'pointer',
+                    cursor: confirmedBreachedConvs.length > 0 ? 'pointer' : 'default',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -1099,18 +1100,23 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
                     transition: 'all 0.2s ease'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
+                    if (confirmedBreachedConvs.length > 0) {
+                      e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
+                    }
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
                   }}
-                  title={`${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${totalConvsForDay}) - Click to view`}
+                  title={confirmedBreachedConvs.length > 0 
+                    ? `${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${totalConvsForDay}) - Click to view`
+                    : `0% breached - No 10+ min waits today!`
+                  }
                 >
                   {/* Breached percentage */}
                   <div style={{
                     fontSize: '24px',
                     fontWeight: 800,
-                    color: '#d84c4c',
+                    color: breachedColor,
                     textAlign: 'center',
                     lineHeight: '1'
                   }}>
@@ -1120,7 +1126,7 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
                   <div style={{
                     fontSize: '11px',
                     fontWeight: 600,
-                    color: '#d84c4c',
+                    color: breachedColor,
                     textAlign: 'center',
                     lineHeight: '1.2',
                     marginTop: '4px',
