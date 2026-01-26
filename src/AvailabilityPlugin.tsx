@@ -10,6 +10,7 @@ import { Timeline } from './components/Timeline'
 import { AgentZones } from './components/AgentZones'
 import { Legend } from './components/Legend'
 import { FallbackGauge } from './components/FallbackGauge'
+import { TSEConversationTable } from './components/TSEConversationTable'
 import { useAgentDataFromApi } from './hooks/useAgentData'
 import { TEAM_MEMBERS } from './data/teamMembers'
 import type { City, AgentData, AgentStatus } from './types'
@@ -353,12 +354,26 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 
 function getMockUnassignedConversations(nowSeconds: number): any[] {
   return [
-    { id: 'mock-1001', created_at: nowSeconds - 90, admin_assignee_id: null, admin_assignee: null },
-    { id: 'mock-1002', created_at: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },
-    { id: 'mock-1003', created_at: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },
-    { id: 'mock-1004', created_at: nowSeconds - 610, admin_assignee_id: null, admin_assignee: null },
-    { id: 'mock-1005', created_at: nowSeconds - 700, admin_assignee_id: null, admin_assignee: null },
-    { id: 'mock-1006', created_at: nowSeconds - 980, admin_assignee_id: null, admin_assignee: null },
+    // Green zone: 1-3 minutes (safe, more than 7 minutes remaining)
+    { id: 'mock-1001', created_at: nowSeconds - 60, admin_assignee_id: null, admin_assignee: null },   // 1 min
+    { id: 'mock-1002', created_at: nowSeconds - 120, admin_assignee_id: null, admin_assignee: null },  // 2 min
+    { id: 'mock-1003', created_at: nowSeconds - 180, admin_assignee_id: null, admin_assignee: null },  // 3 min
+    
+    // Yellow zone: 4-7 minutes (warning, 7-4 minutes remaining)
+    { id: 'mock-1004', created_at: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
+    { id: 'mock-1005', created_at: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
+    { id: 'mock-1006', created_at: nowSeconds - 360, admin_assignee_id: null, admin_assignee: null },  // 6 min
+    { id: 'mock-1007', created_at: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },  // 7 min
+    
+    // Red zone: 8-9 minutes (critical, less than 4 minutes remaining)
+    { id: 'mock-1008', created_at: nowSeconds - 480, admin_assignee_id: null, admin_assignee: null },  // 8 min
+    { id: 'mock-1009', created_at: nowSeconds - 540, admin_assignee_id: null, admin_assignee: null },  // 9 min
+    
+    // Breached: 10+ minutes (should appear in breached stack)
+    { id: 'mock-1010', created_at: nowSeconds - 610, admin_assignee_id: null, admin_assignee: null },  // 10.17 min
+    { id: 'mock-1011', created_at: nowSeconds - 700, admin_assignee_id: null, admin_assignee: null },  // 11.67 min
+    { id: 'mock-1012', created_at: nowSeconds - 850, admin_assignee_id: null, admin_assignee: null },  // 14.17 min
+    { id: 'mock-1013', created_at: nowSeconds - 980, admin_assignee_id: null, admin_assignee: null },  // 16.33 min
   ]
 }
 
@@ -377,6 +392,7 @@ function isConversationUnassigned(conversation: any): boolean {
 function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
   const [conveyorBeltCurrentTime, setConveyorBeltCurrentTime] = useState(() => Date.now() / 1000)
   const [showBreachedModal, setShowBreachedModal] = useState(false)
+  const [selectedConversation, setSelectedConversation] = useState<any | null>(null)
   const confirmedBreachedIdsRef = useRef<Set<string>>(new Set())
   const removedIdsRef = useRef<Set<string>>(new Set())
   const checkedIdsRef = useRef<Set<string>>(new Set())
@@ -393,21 +409,38 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
     return () => clearInterval(timer)
   }, [])
 
-  // Calculate last breach reset timestamp (2:00 AM UTC)
+  // Calculate last breach reset timestamp (10:00 AM UTC) - stable, only calculated once
   const lastBreachResetTimestamp = useMemo(() => {
-    const now = new Date(conveyorBeltCurrentTime * 1000)
+    const now = new Date()
     const resetTime = new Date(Date.UTC(
       now.getUTCFullYear(),
       now.getUTCMonth(),
       now.getUTCDate(),
-      2,
+      10,
       0,
       0,
       0
     ))
     if (now < resetTime) resetTime.setUTCDate(resetTime.getUTCDate() - 1)
     return resetTime.getTime() / 1000
-  }, [conveyorBeltCurrentTime])
+  }, []) // Empty dependency - only calculate once on mount
+
+  // Calculate cutoff timestamp (2:00 AM UTC of the day after reset)
+  const cutoffTimestamp = useMemo(() => {
+    const resetDate = new Date(lastBreachResetTimestamp * 1000)
+    const cutoffTime = new Date(Date.UTC(
+      resetDate.getUTCFullYear(),
+      resetDate.getUTCMonth(),
+      resetDate.getUTCDate(),
+      2,
+      0,
+      0,
+      0
+    ))
+    // If reset is at 10 AM, cutoff is 2 AM next day
+    cutoffTime.setUTCDate(cutoffTime.getUTCDate() + 1)
+    return cutoffTime.getTime() / 1000
+  }, [lastBreachResetTimestamp])
 
   useEffect(() => {
     if (lastResetRef.current === lastBreachResetTimestamp) return
@@ -499,6 +532,29 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
     checkConversationAssignments(eligibleIds.slice(0, batchSize))
   }, [unassignedConvs, conveyorBeltCurrentTime, checkConversationAssignments])
 
+  // Automatically mark mock conversations as breached if they're over 10 minutes old
+  useEffect(() => {
+    const now = conveyorBeltCurrentTime
+    
+    unassignedConvs.forEach((conv) => {
+      const convId = conv.id || conv.conversation_id
+      if (!convId || !String(convId).startsWith('mock-')) return
+      if (!conv.createdTimestamp) return
+      if (removedIdsRef.current.has(convId)) return
+      
+      const elapsedSeconds = now - conv.createdTimestamp
+      // Mark as breached when elapsed time reaches 600 seconds (10 minutes)
+      if (elapsedSeconds >= 600) {
+        // Mark as breached
+        confirmedBreachedIdsRef.current.add(convId)
+        checkedIdsRef.current.add(convId)
+      } else {
+        // Remove from breached if under 10 minutes
+        confirmedBreachedIdsRef.current.delete(convId)
+      }
+    })
+  }, [unassignedConvs, conveyorBeltCurrentTime])
+
   return (
     <>
       {/* Reso Queue - Waiting Conveyor Belt */}
@@ -525,8 +581,8 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              marginLeft: '10px',
-              padding: '2px 8px',
+              marginLeft: '16px',
+              padding: '8px 16px',
               borderRadius: '999px',
               backgroundColor: unassignedConvs.length > 10 
                 ? 'rgba(253, 135, 137, 0.15)'
@@ -538,7 +594,7 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
                 : unassignedConvs.length > 5
                 ? '#ffc107'
                 : '#4cec8c',
-              fontSize: '13px',
+              fontSize: '36px',
               fontWeight: 700,
               lineHeight: 1
             }}>
@@ -576,31 +632,65 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
             borderRadius: '2px'
           }} />
           
+          {/* 5-minute threshold line */}
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            top: '5px',
+            bottom: '5px',
+            width: '4px',
+            backgroundColor: '#ffc107',
+            zIndex: 10,
+            boxShadow: '0 0 8px rgba(255, 193, 7, 0.3)',
+            transform: 'translateX(-50%)'
+          }} />
+          
+          {/* 5-minute threshold label */}
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            top: '-22px',
+            fontSize: '13px',
+            fontWeight: 700,
+            color: '#cc9900',
+            backgroundColor: 'rgba(255, 193, 7, 0.2)',
+            padding: '3px 8px',
+            borderRadius: '4px',
+            zIndex: 11,
+            whiteSpace: 'nowrap',
+            transform: 'translateX(-50%)',
+            textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
+          }}>
+            5 min
+          </div>
+          
           {/* 10-minute threshold line */}
           <div style={{
             position: 'absolute',
             right: '110px',
-            top: '20px',
-            bottom: '20px',
+            top: '5px',
+            bottom: '5px',
             width: '4px',
             backgroundColor: '#fd8789',
             zIndex: 10,
             boxShadow: '0 0 8px rgba(253, 135, 137, 0.3)'
           }} />
           
-          {/* Threshold label */}
+          {/* 10-minute threshold label */}
           <div style={{
             position: 'absolute',
-            right: '118px',
-            top: '8px',
-            fontSize: '11px',
-            fontWeight: 600,
+            right: '110px',
+            top: '-22px',
+            fontSize: '13px',
+            fontWeight: 700,
             color: '#fd8789',
-            backgroundColor: 'rgba(253, 135, 137, 0.1)',
-            padding: '2px 6px',
+            backgroundColor: 'rgba(253, 135, 137, 0.2)',
+            padding: '3px 8px',
             borderRadius: '4px',
             zIndex: 11,
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            transform: 'translateX(50%)',
+            textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
           }}>
             10 min
           </div>
@@ -611,129 +701,123 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
             if (!createdTimestamp) return false
             const convId = conv.id || conv.conversation_id
             if (convId && removedIdsRef.current.has(convId)) return false
+            // Remove breached conversations from belt - they drop off once they breach
             if (convId && confirmedBreachedIdsRef.current.has(convId)) return false
             return true
-          }).map((conv) => {
+          }).map((conv, index) => {
             const convId = conv.id || conv.conversation_id
             const createdTimestamp = conv.createdTimestamp
             
             const elapsedSeconds = conveyorBeltCurrentTime - createdTimestamp
             const progressPercent = Math.min((elapsedSeconds / 600) * 100, 100)
-            const adjustedProgressPercent = Math.min(progressPercent * 0.90, 90)
             
             const isPendingBreachCheck = elapsedSeconds >= 600 && elapsedSeconds < 660
             const isConfirmedBreached = !!(convId && confirmedBreachedIdsRef.current.has(convId))
             const isBreached = elapsedSeconds >= 600
             
-            // Calculate color based on progress
-            const getColor = (percent: number) => {
-              if (percent >= 100) {
-                return { bg: '#fd8789', border: '#d84c4c', text: '#ffffff' }
-              } else if (percent >= 80) {
-                const factor = (percent - 80) / 20
-                return {
-                  bg: `rgb(${255 - Math.floor(57 * factor)}, ${193 - Math.floor(105 * factor)}, ${7 - Math.floor(7 * factor)})`,
-                  border: `rgb(${245 - Math.floor(161 * factor)}, ${124 - Math.floor(76 * factor)}, ${0})`,
-                  text: '#ffffff'
-                }
-              } else if (percent >= 50) {
-                const factor = (percent - 50) / 30
-                return {
-                  bg: `rgb(${255 - Math.floor(0 * factor)}, ${193 - Math.floor(41 * factor)}, ${7 + Math.floor(113 * factor)})`,
-                  border: `rgb(${245 - Math.floor(0 * factor)}, ${124 + Math.floor(31 * factor)}, ${0})`,
-                  text: '#292929'
-                }
-              } else {
-                const factor = percent / 50
-                return {
-                  bg: `rgb(${76 + Math.floor(179 * factor)}, ${236 + Math.floor(-43 * factor)}, ${140 - Math.floor(133 * factor)})`,
-                  border: `rgb(${51 + Math.floor(194 * factor)}, ${153 + Math.floor(-29 * factor)}, ${51 - Math.floor(51 * factor)})`,
-                  text: '#292929'
-                }
-              }
-            }
-            
-            const colors = getColor(progressPercent)
             const secondsRemaining = Math.max(0, Math.floor(600 - elapsedSeconds))
             const minutesRemaining = Math.floor(secondsRemaining / 60)
             const secsRemaining = secondsRemaining % 60
             
+            // Stagger bubbles vertically to avoid overlap
+            // Alternate between up and down offsets based on index
+            const staggerOffset = (index % 3 === 0) ? 0 : (index % 3 === 1) ? -25 : 25
+            
+            // Determine which SVG to use based on breach status and progress
+            // Green: more than 7 minutes remaining (< 30% progress)
+            // Yellow: 7, 6, 5, and 4 minutes remaining (30% - 60% progress)
+            // Red: less than 4 min remaining or breached (>= 60% progress or breached)
+            const getSvgUrl = () => {
+              if (isConfirmedBreached || progressPercent >= 60) {
+                return 'https://res.cloudinary.com/doznvxtja/image/upload/v1769146409/8_symmfo.svg' // Red
+              } else if (progressPercent >= 30) {
+                return 'https://res.cloudinary.com/doznvxtja/image/upload/v1769146409/9_nmhwpr.svg' // Yellow
+              } else {
+                return 'https://res.cloudinary.com/doznvxtja/image/upload/v1769161765/huddle_logo_1_xlram0.svg' // Green
+              }
+            }
+            
+            const svgUrl = getSvgUrl()
+            const timerText = isConfirmedBreached 
+              ? 'BREACHED' 
+              : (minutesRemaining > 0 ? `${minutesRemaining}m ${secsRemaining}s` : `${secsRemaining}s`)
+            
             return (
-              <a
+              <div
                 key={convId}
-                href={`https://app.intercom.com/a/inbox/${convId}`}
-                target="_blank"
-                rel="noopener noreferrer"
+                onClick={() => setSelectedConversation(conv)}
                 style={{
                   position: 'absolute',
-                  left: isBreached 
-                    ? `${Math.min(95 + (elapsedSeconds - 600) / 60 * 2, 98)}%`
-                    : `${Math.min(adjustedProgressPercent, 90)}%`,
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  transition: 'left 1s linear, z-index 0s',
+                  // Position using right offset - starts far right, moves toward 10 min marker (110px from right)
+                  // At 0% progress: right = calc(100% - 10px) (far left of belt)
+                  // At 100% progress: right = 110px (at 10 min marker)
+                  right: `calc(110px + (100% - 120px) * ${(100 - Math.min(progressPercent, 100)) / 100})`,
+                  top: `calc(50% + ${staggerOffset}px)`,
+                  transform: 'translate(50%, -50%)',
+                  transition: 'right 1s linear, top 0.3s ease, z-index 0s',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                   textDecoration: 'none',
                   color: 'inherit',
-                  zIndex: isBreached ? 5 : 1,
-                  cursor: 'pointer'
+                  zIndex: 20 + index,  // Stack newer bubbles on top
+                  cursor: 'pointer',
+                  outline: 'none',
+                  border: 'none'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)'
+                  e.currentTarget.style.transform = 'translate(50%, -50%) scale(1.1)'
                   e.currentTarget.style.zIndex = '100'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)'
-                  e.currentTarget.style.zIndex = isBreached ? '5' : '1'
+                  e.currentTarget.style.transform = 'translate(50%, -50%) scale(1)'
+                  e.currentTarget.style.zIndex = String(20 + index)
                 }}
                 title={`Conversation ${convId} - ${isBreached ? 'BREACHED' : (isPendingBreachCheck ? 'Pending breach check' : `${minutesRemaining}m ${secsRemaining}s until breach`)}`}
               >
                 <div style={{
+                  position: 'relative',
                   width: '80px',
                   height: '80px',
-                  borderRadius: '12px',
-                  backgroundColor: colors.bg,
-                  border: `3px solid ${colors.border}`,
-                  color: colors.text,
                   display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
                   alignItems: 'center',
-                  gap: '4px',
-                  boxShadow: `0 2px 8px rgba(0,0,0,0.2)`,
-                  transition: 'all 0.3s ease',
-                  padding: '6px'
+                  justifyContent: 'center',
+                  outline: 'none',
+                  border: 'none'
                 }}>
+                  <img 
+                    src={svgUrl}
+                    alt="Chat status"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      outline: 'none',
+                      border: 'none'
+                    }}
+                  />
                   <div style={{
-                    fontSize: '16px',
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    fontSize: '12px',
                     fontWeight: 700,
-                    color: colors.text,
-                    lineHeight: '1.2',
-                    textAlign: 'center'
-                  }}>
-                    {convId.toString().slice(-4)}
-                  </div>
-                  <div style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    color: isConfirmedBreached ? '#fd8789' : colors.text,
+                    color: '#000000',
                     textAlign: 'center',
                     lineHeight: '1.2',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    textShadow: '0 1px 2px rgba(255,255,255,0.8)',
+                    zIndex: 1
                   }}>
-                    {isConfirmedBreached ? (
-                      <span style={{ color: '#fd8789', fontWeight: 700 }}>BREACHED</span>
-                    ) : (
-                      <>
-                        {minutesRemaining > 0 ? `${minutesRemaining}m ` : ''}{secsRemaining}s
-                      </>
-                    )}
+                    {timerText}
                   </div>
                 </div>
-              </a>
+              </div>
             )
           })}
           
@@ -746,11 +830,33 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
               if (!confirmedBreachedIdsRef.current.has(convId)) return false
               const createdTimestamp = conv.createdTimestamp
               if (!createdTimestamp) return false
+              // Skip timestamp filters for mock conversations
+              if (String(convId).startsWith('mock-')) return true
+              // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
               if (createdTimestamp < lastBreachResetTimestamp) return false
+              if (createdTimestamp >= cutoffTimestamp) return false
               return true
             })
 
+            // Calculate total conversations received for the day (between 10 AM UTC and 2 AM UTC next day)
+            const totalConvsForDay = unassignedConvs.filter((conv) => {
+              const convId = conv.id || conv.conversation_id
+              const createdTimestamp = conv.createdTimestamp
+              if (!createdTimestamp) return false
+              // Skip timestamp filters for mock conversations
+              if (convId && String(convId).startsWith('mock-')) return true
+              // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
+              if (createdTimestamp < lastBreachResetTimestamp) return false
+              if (createdTimestamp >= cutoffTimestamp) return false
+              return true
+            }).length
+
             if (confirmedBreachedConvs.length === 0) return null
+
+            // Calculate percentage of conversations received for the day that breached
+            const breachedPercentage = totalConvsForDay > 0 
+              ? Math.round((confirmedBreachedConvs.length / totalConvsForDay) * 100)
+              : 0
 
             return (
               <div
@@ -761,7 +867,13 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
                   top: '50%',
                   transform: 'translateY(-50%)',
                   cursor: 'pointer',
-                  zIndex: 15
+                  zIndex: 15,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '8px 12px',
+                  transition: 'all 0.2s ease'
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
@@ -769,57 +881,29 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
                 }}
-                title={`${confirmedBreachedConvs.length} breached conversation${confirmedBreachedConvs.length !== 1 ? 's' : ''} - Click to view`}
+                title={`${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${totalConvsForDay}) - Click to view`}
               >
-                <div style={{ position: 'relative', width: '80px', height: '80px' }}>
-                  {confirmedBreachedConvs.slice(0, 3).map((conv, idx) => (
-                    <div
-                      key={conv.id || conv.conversation_id}
-                      style={{
-                        position: 'absolute',
-                        width: '80px',
-                        height: '80px',
-                        borderRadius: '12px',
-                        backgroundColor: '#fd8789',
-                        border: '3px solid #d84c4c',
-                        color: '#ffffff',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        gap: '4px',
-                        boxShadow: `0 2px 8px rgba(0,0,0,0.2)`,
-                        transform: `translate(${idx * 4}px, ${idx * 4}px)`,
-                        transition: 'all 0.3s ease',
-                        zIndex: 15 - idx,
-                        padding: '6px'
-                      }}
-                    >
-                      {idx === 0 && (
-                        <>
-                          <div style={{
-                            fontSize: '20px',
-                            fontWeight: 700,
-                            color: '#ffffff',
-                            textAlign: 'center',
-                            lineHeight: '1.2'
-                          }}>
-                          {confirmedBreachedConvs.length}
-                          </div>
-                          <div style={{
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: '#ffffff',
-                            textAlign: 'center',
-                            lineHeight: '1.2',
-                            marginTop: '0px'
-                          }}>
-                            BREACHED
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
+                {/* Breached percentage */}
+                <div style={{
+                  fontSize: '24px',
+                  fontWeight: 800,
+                  color: '#d84c4c',
+                  textAlign: 'center',
+                  lineHeight: '1'
+                }}>
+                  {breachedPercentage}%
+                </div>
+                {/* Label */}
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#d84c4c',
+                  textAlign: 'center',
+                  lineHeight: '1.2',
+                  marginTop: '4px',
+                  maxWidth: '80px'
+                }}>
+                  {confirmedBreachedConvs.length}/{totalConvsForDay} 10+ min waits today
                 </div>
               </div>
             )
@@ -836,7 +920,9 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
           if (!confirmedBreachedIdsRef.current.has(convId)) return false
           const createdTimestamp = conv.createdTimestamp
           if (!createdTimestamp) return false
+          // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
           if (createdTimestamp < lastBreachResetTimestamp) return false
+          if (createdTimestamp >= cutoffTimestamp) return false
           return true
         }).map((conv) => {
           const createdTimestamp = conv.createdTimestamp
@@ -978,6 +1064,214 @@ function ResoQueueBelt({ unassignedConvs }: ResoQueueBeltProps) {
           </div>
         )
       })()}
+
+      {/* Individual Conversation Modal */}
+      {selectedConversation && (() => {
+        const conv = selectedConversation
+        const convId = conv.id || conv.conversation_id
+        const createdAt = conv.created_at || conv.createdAt || conv.first_opened_at
+        const waitingSince = conv.waiting_since || createdAt
+        
+        // Format timestamps for display
+        const formatTimestamp = (ts: any) => {
+          if (!ts) return 'N/A'
+          const date = typeof ts === 'number' 
+            ? new Date(ts > 1e12 ? ts : ts * 1000) 
+            : new Date(ts)
+          return date.toLocaleString()
+        }
+        
+        const intercomUrl = `https://app.intercom.com/a/inbox/gu1e0q0t/inbox/admin/9110812/conversation/${convId}`
+        
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 1000,
+              padding: '20px'
+            }}
+            onClick={() => setSelectedConversation(null)}
+          >
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '12px',
+                padding: '24px',
+                maxWidth: '450px',
+                width: '100%',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                border: '1px solid #e0e0e0'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '20px'
+              }}>
+                <h2 style={{
+                  margin: 0,
+                  fontSize: '20px',
+                  fontWeight: 700,
+                  color: '#292929'
+                }}>
+                  Conversation Details
+                </h2>
+                <button
+                  onClick={() => setSelectedConversation(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '24px',
+                    cursor: 'pointer',
+                    color: '#666',
+                    padding: '0',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '4px',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f0f0f0'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px'
+              }}>
+                {/* Conversation ID */}
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: '#f9f9f9',
+                  borderRadius: '8px',
+                  border: '1px solid #e0e0e0'
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#666',
+                    marginBottom: '4px',
+                    textTransform: 'uppercase'
+                  }}>
+                    Conversation ID
+                  </div>
+                  <a
+                    href={intercomUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      color: '#0066cc',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    {convId}
+                  </a>
+                </div>
+                
+                {/* Created At */}
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: '#f9f9f9',
+                  borderRadius: '8px',
+                  border: '1px solid #e0e0e0'
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#666',
+                    marginBottom: '4px',
+                    textTransform: 'uppercase'
+                  }}>
+                    Created At
+                  </div>
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: 500,
+                    color: '#292929'
+                  }}>
+                    {formatTimestamp(createdAt)}
+                  </div>
+                </div>
+                
+                {/* Waiting Since */}
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: '#f9f9f9',
+                  borderRadius: '8px',
+                  border: '1px solid #e0e0e0'
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#666',
+                    marginBottom: '4px',
+                    textTransform: 'uppercase'
+                  }}>
+                    Waiting Since
+                  </div>
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: 500,
+                    color: '#292929'
+                  }}>
+                    {formatTimestamp(waitingSince)}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Open in Intercom Button */}
+              <a
+                href={intercomUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'block',
+                  marginTop: '20px',
+                  padding: '12px 20px',
+                  backgroundColor: '#0066cc',
+                  color: '#ffffff',
+                  textAlign: 'center',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#0052a3'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#0066cc'
+                }}
+              >
+                Open in Intercom
+              </a>
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }
@@ -1027,6 +1321,9 @@ export function AvailabilityPlugin() {
   // Unassigned conversations state for conveyor belt
   const [unassignedConversationsData, setUnassignedConversationsData] = useState<any[]>([])
   
+  // Store mock data in a ref so it doesn't regenerate on every render
+  const mockDataRef = useRef<any[] | null>(null)
+  
   // Format timestamp for display
   const formatLastUpdated = (date: Date): string => {
     const now = new Date()
@@ -1072,12 +1369,12 @@ export function AvailabilityPlugin() {
     // Initial fetch
     fetchUnassignedConversations()
     
-    // Set up refresh every 1 minute (60000 ms)
+    // Set up refresh every 15 seconds (15000 ms)
     const interval = setInterval(() => {
       if (isMounted) {
         fetchUnassignedConversations()
       }
-    }, 60000)
+    }, 15000)
     
     return () => {
       isMounted = false
@@ -1091,9 +1388,21 @@ export function AvailabilityPlugin() {
       window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1'
     )
-    const rawUnassignedConversations = unassignedConversationsData?.length
-      ? unassignedConversationsData
-      : (isLocalhost ? getMockUnassignedConversations(Date.now() / 1000) : [])
+    
+    let rawUnassignedConversations: any[]
+    
+    // On localhost, ALWAYS use mock data (ignore API responses)
+    if (isLocalhost) {
+      // Use cached mock data if available, otherwise create and cache it
+      if (!mockDataRef.current) {
+        mockDataRef.current = getMockUnassignedConversations(Date.now() / 1000)
+      }
+      rawUnassignedConversations = mockDataRef.current
+    } else if (unassignedConversationsData?.length) {
+      rawUnassignedConversations = unassignedConversationsData
+    } else {
+      rawUnassignedConversations = []
+    }
 
     if (rawUnassignedConversations.length === 0) return []
 
@@ -1419,6 +1728,36 @@ export function AvailabilityPlugin() {
           zoneIdx: i - 1,
         })
       }
+    }
+    
+    // Fallback to default cities for demo mode (when no config is set)
+    if (result.length === 0) {
+      return [
+        {
+          name: 'London',
+          code: 'LDN',
+          timezone: 'Europe/London',
+          startHour: 8,  // 8 AM UTC
+          endHour: 17,   // 5 PM UTC
+          zoneIdx: 0,
+        },
+        {
+          name: 'New York',
+          code: 'NYC',
+          timezone: 'America/New_York',
+          startHour: 13, // 8 AM EST = 13:00 UTC
+          endHour: 22,   // 5 PM EST = 22:00 UTC
+          zoneIdx: 1,
+        },
+        {
+          name: 'San Francisco',
+          code: 'SFO',
+          timezone: 'America/Los_Angeles',
+          startHour: 16, // 8 AM PST = 16:00 UTC
+          endHour: 25,   // 5 PM PST = 01:00 UTC next day (25 = wraps)
+          zoneIdx: 2,
+        },
+      ]
     }
     
     return result
@@ -2198,65 +2537,114 @@ export function AvailabilityPlugin() {
 
   return (
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
-      <div className="main-content">
-        <div className="timeline-section">
-          <div style={{ marginBottom: '8px', position: 'relative' }}>
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              fontSize: '11px',
-              color: '#6b7280',
-              fontWeight: 400
-            }}>
-              Last updated: {formatLastUpdated(lastUpdated)}
+      <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+        {/* Left sidebar with TSE Conversation Table */}
+        <div style={{
+          width: '280px',
+          flexShrink: 0,
+          position: 'sticky',
+          top: '20px',
+          alignSelf: 'flex-start',
+          maxHeight: 'calc(100vh - 40px)',
+          overflowY: 'auto'
+        }}>
+          <TSEConversationTable
+            scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
+            scheduleTSE={config.scheduleTSE as string | undefined}
+          />
+        </div>
+
+        {/* Main content area */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="timeline-section">
+            <div style={{ marginBottom: '8px', position: 'relative' }}>
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 400
+              }}>
+                Last updated: {formatLastUpdated(lastUpdated)}
+              </div>
             </div>
+            <ResoQueueBelt unassignedConvs={unassignedConvs} />
+
+            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <Timeline
+                  cities={cities}
+                  currentTime={currentTime}
+                  simulateTime={simulateTime}
+                />
+
+                <AgentZones
+                  cities={cities}
+                  agentsByCity={agentsByCity}
+                  currentTime={currentTime}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <FallbackGauge
+                  cities={cities}
+                  agentsByCity={agentsByCity}
+                  scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
+                  scheduleTSE={config.scheduleTSE as string | undefined}
+                  scheduleOOO={config.scheduleOOO as string | undefined}
+                />
+              </div>
+            </div>
+
+            {showLegend && <Legend />}
           </div>
-          <ResoQueueBelt unassignedConvs={unassignedConvs} />
-
-          <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <Timeline
-                cities={cities}
-                currentTime={currentTime}
-                simulateTime={simulateTime}
-              />
-
-              <AgentZones
-                cities={cities}
-                agentsByCity={agentsByCity}
-                currentTime={currentTime}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <FallbackGauge
-                cities={cities}
-                agentsByCity={agentsByCity}
-                scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
-                scheduleTSE={config.scheduleTSE as string | undefined}
-                scheduleOOO={config.scheduleOOO as string | undefined}
-              />
-            </div>
-          </div>
-
-          {showLegend && <Legend />}
         </div>
       </div>
     </div>
   )
 }
 
-// Generate agents from real team member data
+// Generate agents from real team member data with random statuses for demo mode
 function generateDemoAgents(_cities: City[]): AgentData[] {
-  const statuses: AgentStatus[] = ['away', 'call', 'lunch', 'chat', 'closing']
+  // Define status configurations with associated emoji, label, and ring colors
+  const statusConfigs: Array<{
+    status: AgentStatus
+    emoji: string
+    label: string
+    ringColor: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'purple' | 'orange'
+  }> = [
+    { status: 'chat', emoji: '🟢', label: 'Available', ringColor: 'green' },
+    { status: 'chat', emoji: '🟢', label: 'Available', ringColor: 'green' },
+    { status: 'chat', emoji: '🟢', label: 'Available', ringColor: 'green' },
+    { status: 'closing', emoji: '🚫', label: 'Off Chat Hour', ringColor: 'red' },
+    { status: 'closing', emoji: '🚫', label: 'Off Chat Hour', ringColor: 'red' },
+    { status: 'lunch', emoji: '☕', label: '☕ On a break', ringColor: 'yellow' },
+    { status: 'lunch', emoji: '🍕', label: '🥪 At Lunch', ringColor: 'yellow' },
+    { status: 'call', emoji: '🖥', label: '🖥 Zoom - 1:1 Meeting', ringColor: 'zoom' },
+    { status: 'call', emoji: '🗓️', label: '🗓️ In a meeting', ringColor: 'purple' },
+    { status: 'away', emoji: '🏡', label: 'Away', ringColor: 'blue' },
+    { status: 'call', emoji: '🐛', label: '🐛 Doing Bug Triage/Escalation', ringColor: 'purple' },
+    { status: 'call', emoji: '👨‍🏫', label: '👨‍🏫 Coaching / Shadowing', ringColor: 'purple' },
+  ]
   
-  return TEAM_MEMBERS.map(member => ({
-    id: member.id,
-    name: member.name,
-    avatar: member.avatar,
-    status: member.defaultStatus || statuses[Math.floor(Math.random() * statuses.length)],
-    timezone: member.timezone,
-  }))
+  return TEAM_MEMBERS.map(member => {
+    // Pick a random status configuration
+    const config = statusConfigs[Math.floor(Math.random() * statusConfigs.length)]
+    // Generate random minutes in status (1-120 minutes)
+    const minutesInStatus = Math.floor(Math.random() * 120) + 1
+    
+    return {
+      id: member.id,
+      name: member.name,
+      avatar: member.avatar,
+      status: member.defaultStatus || config.status,
+      timezone: member.timezone,
+      statusEmoji: config.emoji,
+      statusLabel: config.label,
+      ringColor: config.ringColor,
+      minutesInStatus,
+    }
+  })
 }
 
