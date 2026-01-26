@@ -1986,15 +1986,31 @@ export function AvailabilityPlugin() {
   
   // Calculate trending data for Chats Today
   const chatsTrending = useMemo(() => {
-    if (historicalMetrics.loading || historicalMetrics.yesterdayChats === null) {
+    console.log('[AvailabilityPlugin] chatsTrending calculation:', {
+      loading: historicalMetrics.loading,
+      yesterdayChats: historicalMetrics.yesterdayChats,
+      totalChatsTakenToday
+    })
+    
+    if (historicalMetrics.loading) {
       return null
     }
     
+    // Always return yesterdayValue if we have it, even if it's 0
     const yesterdayChats = historicalMetrics.yesterdayChats
+    if (yesterdayChats === null) {
+      console.log('[AvailabilityPlugin] No yesterday data available')
+      return null
+    }
+    
     const todayChats = totalChatsTakenToday
     
     if (yesterdayChats === 0) {
-      return todayChats > 0 ? { direction: 'up' as const, percentage: 100 } : null
+      return { 
+        direction: 'up' as const, 
+        percentage: todayChats > 0 ? 100 : 0,
+        yesterdayValue: yesterdayChats 
+      }
     }
     
     const percentChange = Math.round(((todayChats - yesterdayChats) / yesterdayChats) * 100)
