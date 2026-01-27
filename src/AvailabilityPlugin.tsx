@@ -471,25 +471,13 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 
 function getMockUnassignedConversations(nowSeconds: number): any[] {
   return [
-    // Green zone: 1-3 minutes (safe, more than 7 minutes remaining)
-    { id: 'mock-1001', created_at: nowSeconds - 60, waiting_since: nowSeconds - 60, admin_assignee_id: null, admin_assignee: null },   // 1 min
-    { id: 'mock-1002', created_at: nowSeconds - 120, waiting_since: nowSeconds - 120, admin_assignee_id: null, admin_assignee: null },  // 2 min
-    { id: 'mock-1003', created_at: nowSeconds - 180, waiting_since: nowSeconds - 180, admin_assignee_id: null, admin_assignee: null },  // 3 min
-    
-    // Yellow zone: 4-6 minutes (warning)
-    { id: 'mock-1004', created_at: nowSeconds - 240, waiting_since: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
-    { id: 'mock-1005', created_at: nowSeconds - 300, waiting_since: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
-    { id: 'mock-1006', created_at: nowSeconds - 360, waiting_since: nowSeconds - 360, admin_assignee_id: null, admin_assignee: null },  // 6 min
-    
-    // Red zone: 8-9 minutes (critical, close to threshold - these will fly away first)
-    { id: 'mock-1007', created_at: nowSeconds - 500, waiting_since: nowSeconds - 500, admin_assignee_id: null, admin_assignee: null },  // 8.3 min
-    { id: 'mock-1008', created_at: nowSeconds - 510, waiting_since: nowSeconds - 510, admin_assignee_id: null, admin_assignee: null },  // 8.5 min
-    { id: 'mock-1009', created_at: nowSeconds - 520, waiting_since: nowSeconds - 520, admin_assignee_id: null, admin_assignee: null },  // 8.7 min
-    
-    // Breached: 10+ minutes (should appear in breached stack)
-    { id: 'mock-1010', created_at: nowSeconds - 610, waiting_since: nowSeconds - 610, admin_assignee_id: null, admin_assignee: null },  // 10.17 min
-    { id: 'mock-1011', created_at: nowSeconds - 700, waiting_since: nowSeconds - 700, admin_assignee_id: null, admin_assignee: null },  // 11.67 min
-    { id: 'mock-1012', created_at: nowSeconds - 850, waiting_since: nowSeconds - 850, admin_assignee_id: null, admin_assignee: null },  // 14.17 min
+    // Simple demo: 3 bubbles
+    // Bubble 1: ~30 seconds from breaching (9.5 min = 570 sec) - will explode
+    { id: 'mock-1001', created_at: nowSeconds - 570, waiting_since: nowSeconds - 570, admin_assignee_id: null, admin_assignee: null },  // 9.5 min - breaches in ~30s
+    // Bubble 2: 5 min - will fly away after bubble 1 breaches
+    { id: 'mock-1002', created_at: nowSeconds - 300, waiting_since: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
+    // Bubble 3: 4 min - will fly away after bubble 2
+    { id: 'mock-1003', created_at: nowSeconds - 240, waiting_since: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
   ]
 }
 
@@ -2008,9 +1996,9 @@ export function AvailabilityPlugin() {
       setAssignedMockIds(prev => new Set(prev).add(toAssign.id))
     }
     
-    // First assignment after 90 seconds (let close-to-threshold bubbles breach first)
-    const initialTimeout = setTimeout(assignRandomMock, 90000)
-    const interval = setInterval(assignRandomMock, 12000)
+    // First assignment after 33 seconds (30s for first bubble to breach + 3s), then every 3 seconds
+    const initialTimeout = setTimeout(assignRandomMock, 33000)
+    const interval = setInterval(assignRandomMock, 3000)
     
     return () => {
       clearTimeout(initialTimeout)
