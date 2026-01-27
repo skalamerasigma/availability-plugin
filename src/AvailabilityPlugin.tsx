@@ -1962,7 +1962,7 @@ export function AvailabilityPlugin() {
     
     if (!isLocalhost) return
     
-    // Assign a random mock conversation every 5 seconds
+    // Assign mock conversation periodically (simulating TSE picking up chats)
     const assignRandomMock = () => {
       if (!mockDataRef.current) return
       
@@ -2008,9 +2008,9 @@ export function AvailabilityPlugin() {
       setAssignedMockIds(prev => new Set(prev).add(toAssign.id))
     }
     
-    // First assignment after 3 seconds, then every 5 seconds
-    const initialTimeout = setTimeout(assignRandomMock, 3000)
-    const interval = setInterval(assignRandomMock, 5000)
+    // First assignment after 8 seconds, then every 12 seconds
+    const initialTimeout = setTimeout(assignRandomMock, 8000)
+    const interval = setInterval(assignRandomMock, 12000)
     
     return () => {
       clearTimeout(initialTimeout)
