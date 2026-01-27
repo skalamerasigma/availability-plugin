@@ -1202,8 +1202,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 99999;
+  z-index: 2147483647; /* Maximum z-index value */
   animation: fadeIn 0.2s ease-out;
+  isolation: isolate; /* Create new stacking context */
 }
 
 @keyframes fadeIn {
@@ -1234,7 +1235,7 @@ body {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
   animation: slideUp 0.3s ease-out;
   position: relative;
-  z-index: 100000;
+  z-index: 2147483647; /* Maximum z-index value */
 }
 
 .tse-modal-header {

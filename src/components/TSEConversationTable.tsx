@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { TEAM_MEMBERS } from '../data/teamMembers'
 
 interface TSEConversationData {
@@ -908,12 +909,13 @@ export function TSEConversationTable({
         </div>
       )}
       
-      {/* TSE Details Modal */}
-      {isModalOpen && selectedTSE && (
+      {/* TSE Details Modal - Rendered via Portal to escape stacking contexts */}
+      {isModalOpen && selectedTSE && createPortal(
         <TSEDetailsModal 
           tseData={selectedTSE}
           onClose={handleCloseModal}
-        />
+        />,
+        document.body
       )}
     </div>
   )
