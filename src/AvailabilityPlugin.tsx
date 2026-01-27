@@ -1747,7 +1747,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 8.14 - Fix belt count + assign oldest first')
+  console.log('🚀 PLUGIN VERSION: 8.15 - Fix sort to not mutate cached array')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
@@ -1984,17 +1984,27 @@ export function AvailabilityPlugin() {
       // Sort by longest wait time first (oldest, closest to breaching 10 min)
       // TSEs pick up conversations from oldest to newest
       const nowSeconds = Date.now() / 1000
-      availableMocks.sort((a, b) => {
+      
+      // Create a copy to avoid mutating the original array, then sort
+      const sortedMocks = [...availableMocks].sort((a, b) => {
         const aWait = nowSeconds - (a.waiting_since || a.created_at)
         const bWait = nowSeconds - (b.waiting_since || b.created_at)
         return bWait - aWait // Descending: longest wait first
       })
       
+      // Debug: Log sorted order
+      console.log('[Mock] Sorted by wait time (longest first):', 
+        sortedMocks.map(c => {
+          const wait = Math.round((nowSeconds - (c.waiting_since || c.created_at)) / 60 * 10) / 10
+          return `${c.id}(${wait}m)`
+        }).join(' → ')
+      )
+      
       // Pick the oldest one (first after sorting)
-      const toAssign = availableMocks[0]
+      const toAssign = sortedMocks[0]
       const waitTime = Math.round((nowSeconds - (toAssign.waiting_since || toAssign.created_at)) / 60 * 10) / 10
       
-      console.log('[Mock] Assigned conversation:', toAssign.id, `(${waitTime} min wait)`)
+      console.log('[Mock] ✈️ Assigning:', toAssign.id, `(${waitTime} min wait) - closest to 10 min threshold`)
       setAssignedMockIds(prev => new Set(prev).add(toAssign.id))
     }
     
