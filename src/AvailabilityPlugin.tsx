@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef, Component, ReactNode } from 'react'
 import {
   client,
   useConfig,
@@ -7,6 +7,101 @@ import {
 } from '@sigmacomputing/plugin'
 
 import { Timeline } from './components/Timeline'
+
+// =================================================================
+// ERROR BOUNDARY - Prevents white screen crashes
+// =================================================================
+interface ErrorBoundaryProps {
+  children: ReactNode
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean
+  error: Error | null
+  errorInfo: string
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props)
+    this.state = { hasError: false, error: null, errorInfo: '' }
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ErrorBoundary] Caught error:', error)
+    console.error('[ErrorBoundary] Error info:', errorInfo.componentStack)
+    this.setState({ errorInfo: errorInfo.componentStack || '' })
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          padding: '20px',
+          backgroundColor: '#fff3f3',
+          border: '1px solid #fd8789',
+          borderRadius: '8px',
+          margin: '20px',
+          fontFamily: 'system-ui, -apple-system, sans-serif'
+        }}>
+          <h2 style={{ color: '#d32f2f', margin: '0 0 10px 0' }}>Something went wrong</h2>
+          <p style={{ color: '#333', margin: '0 0 15px 0' }}>
+            The plugin encountered an error. Try refreshing the page.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              backgroundColor: '#1976d2',
+              color: 'white',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              marginRight: '10px'
+            }}
+          >
+            Refresh Page
+          </button>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null, errorInfo: '' })}
+            style={{
+              backgroundColor: '#fff',
+              color: '#1976d2',
+              border: '1px solid #1976d2',
+              padding: '10px 20px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Try Again
+          </button>
+          <details style={{ marginTop: '15px', fontSize: '12px', color: '#666' }}>
+            <summary style={{ cursor: 'pointer' }}>Error Details</summary>
+            <pre style={{ 
+              backgroundColor: '#f5f5f5', 
+              padding: '10px', 
+              borderRadius: '4px',
+              overflow: 'auto',
+              maxHeight: '200px',
+              marginTop: '10px'
+            }}>
+              {this.state.error?.toString()}
+              {this.state.errorInfo}
+            </pre>
+          </details>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
 import { AgentZones } from './components/AgentZones'
 import { Legend } from './components/Legend'
 import { FallbackGauge } from './components/FallbackGauge'
@@ -469,16 +564,47 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
   }
 }
 
+// ============================================
+// MOCK SCENARIO SELECTOR - Change this to switch scenarios
+// ============================================
+const MOCK_SCENARIO: 1 | 2 = 2  // 1 = Demo with fly-away, 2 = 9 scattered bubbles (no fly-away)
+
 function getMockUnassignedConversations(nowSeconds: number): any[] {
-  return [
-    // Simple demo: 3 bubbles
-    // Bubble 1: ~30 seconds from breaching (9.5 min = 570 sec) - will explode
-    { id: 'mock-1001', created_at: nowSeconds - 570, waiting_since: nowSeconds - 570, admin_assignee_id: null, admin_assignee: null },  // 9.5 min - breaches in ~30s
-    // Bubble 2: 5 min - will fly away after bubble 1 breaches
-    { id: 'mock-1002', created_at: nowSeconds - 300, waiting_since: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
-    // Bubble 3: 4 min - will fly away after bubble 2
-    { id: 'mock-1003', created_at: nowSeconds - 240, waiting_since: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
-  ]
+  if (MOCK_SCENARIO === 1) {
+    // SCENARIO 1: Simple demo - 3 bubbles with fly-away animation
+    return [
+      // Bubble 1: ~30 seconds from breaching (9.5 min = 570 sec) - will explode
+      { id: 'mock-1001', created_at: nowSeconds - 570, waiting_since: nowSeconds - 570, admin_assignee_id: null, admin_assignee: null },  // 9.5 min - breaches in ~30s
+      // Bubble 2: 5 min - will fly away after bubble 1 breaches
+      { id: 'mock-1002', created_at: nowSeconds - 300, waiting_since: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
+      // Bubble 3: 4 min - will fly away after bubble 2
+      { id: 'mock-1003', created_at: nowSeconds - 240, waiting_since: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
+    ]
+  } else {
+    // SCENARIO 2: 9 bubbles scattered across the conveyor belt (no fly-away)
+    // Positions are determined by elapsed time relative to 10 min threshold
+    // 0 sec = left edge (0%), 600 sec (10 min) = right edge (100%)
+    return [
+      // Bubble at ~15% (1.5 min = 90 sec)
+      { id: 'mock-2001', created_at: nowSeconds - 90, waiting_since: nowSeconds - 90, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~25% (2.5 min = 150 sec)
+      { id: 'mock-2002', created_at: nowSeconds - 150, waiting_since: nowSeconds - 150, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~35% (3.5 min = 210 sec)
+      { id: 'mock-2003', created_at: nowSeconds - 210, waiting_since: nowSeconds - 210, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~45% (4.5 min = 270 sec)
+      { id: 'mock-2004', created_at: nowSeconds - 270, waiting_since: nowSeconds - 270, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~55% (5.5 min = 330 sec)
+      { id: 'mock-2005', created_at: nowSeconds - 330, waiting_since: nowSeconds - 330, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~62% (6.2 min = 372 sec)
+      { id: 'mock-2006', created_at: nowSeconds - 372, waiting_since: nowSeconds - 372, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~70% (7 min = 420 sec)
+      { id: 'mock-2007', created_at: nowSeconds - 420, waiting_since: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~78% (7.8 min = 468 sec)
+      { id: 'mock-2008', created_at: nowSeconds - 468, waiting_since: nowSeconds - 468, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~85% (8.5 min = 510 sec)
+      { id: 'mock-2009', created_at: nowSeconds - 510, waiting_since: nowSeconds - 510, admin_assignee_id: null, admin_assignee: null },
+    ]
+  }
 }
 
 interface ResoQueueBeltProps {
@@ -853,22 +979,15 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
             return `${minutes}m ${remainingSeconds}s`
           }
 
-          // Count only conversations that are actually on the belt (not breached)
-          const beltCount = unassignedConvs.filter((conv) => {
+          // Count TOTAL unassigned conversations (includes both belt and breached)
+          // This shows all chats waiting to be picked up, regardless of wait time
+          const totalUnassignedCount = unassignedConvs.filter((conv) => {
             const convId = conv.id || conv.conversation_id
             const createdTimestamp = conv.createdTimestamp
             if (!createdTimestamp) return false
+            // Only exclude conversations that have been removed (assigned)
             if (convId && removedIdsRef.current.has(convId)) return false
-            if (convId && confirmedBreachedIdsRef.current.has(convId)) return false
-            // Also exclude conversations already over 10 min at startup
-            const waitingSinceTimestamp = conv.waitingSinceTimestamp || conv.waiting_since
-              ? (typeof conv.waiting_since === "number" 
-                  ? (conv.waiting_since > 1e12 ? conv.waiting_since / 1000 : conv.waiting_since)
-                  : (conv.waitingSinceTimestamp || (conv.waiting_since ? new Date(conv.waiting_since).getTime() / 1000 : null)))
-              : null
-            const waitStartTimestamp = waitingSinceTimestamp || createdTimestamp
-            const elapsedSeconds = conveyorBeltCurrentTime - waitStartTimestamp
-            return elapsedSeconds < 600 // Only count if under 10 min
+            return true
           }).length
 
           return (
@@ -894,21 +1013,21 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                   marginLeft: '16px',
                   padding: '8px 16px',
                   borderRadius: '999px',
-                  backgroundColor: beltCount > 10 
+                  backgroundColor: totalUnassignedCount > 10 
                     ? 'rgba(253, 135, 137, 0.15)'
-                    : beltCount > 5
+                    : totalUnassignedCount > 5
                     ? 'rgba(255, 193, 7, 0.2)'
                     : 'rgba(76, 236, 140, 0.2)',
-                  color: beltCount > 10 
+                  color: totalUnassignedCount > 10 
                     ? '#fd8789'
-                    : beltCount > 5
+                    : totalUnassignedCount > 5
                     ? '#ffc107'
                     : '#4cec8c',
                   fontSize: '36px',
                   fontWeight: 700,
                   lineHeight: 1
                 }}>
-                  {beltCount}
+                  {totalUnassignedCount}
                 </span>
                 {/* Average Wait Time */}
                 <span style={{
@@ -1949,7 +2068,13 @@ export function AvailabilityPlugin() {
     
     if (!isLocalhost) return
     
-    // Assign mock conversation periodically (simulating TSE picking up chats)
+    // SCENARIO 2: No fly-away animation - bubbles stay on belt
+    if (MOCK_SCENARIO === 2) {
+      console.log('[Mock] Scenario 2 active - fly-away disabled, 9 bubbles will stay on belt')
+      return
+    }
+    
+    // SCENARIO 1: Assign mock conversation periodically (simulating TSE picking up chats)
     const assignRandomMock = () => {
       if (!mockDataRef.current) return
       
@@ -2084,7 +2209,17 @@ export function AvailabilityPlugin() {
     console.log('[AvailabilityPlugin] intercomConversations.length:', intercomConversations.length)
     console.log('[AvailabilityPlugin] intercomTeamMembers.length:', intercomTeamMembers.length)
     
+    // On localhost, return mock data for demo purposes
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+    )
+    
     if (!intercomConversations.length || !intercomTeamMembers.length) {
+      if (isLocalhost) {
+        console.log('[AvailabilityPlugin] Localhost detected, returning mock chats today: 47')
+        return 47 // Mock value for localhost demo
+      }
       console.log('[AvailabilityPlugin] No data available, returning 0')
       return 0
     }
@@ -2164,7 +2299,19 @@ export function AvailabilityPlugin() {
   // Matches queue-health-monitor's closedtoday filter
   // =================================================================
   const totalClosedToday = useMemo(() => {
-    if (!intercomConversations.length) return 0
+    // On localhost, return mock data for demo purposes
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+    )
+    
+    if (!intercomConversations.length) {
+      if (isLocalhost) {
+        console.log('[AvailabilityPlugin] Localhost detected, returning mock closed today: 32')
+        return 32 // Mock value for localhost demo
+      }
+      return 0
+    }
     
     // Helper to check if timestamp is today (PT timezone)
     const isToday = (timestamp: number | undefined): boolean => {
@@ -3766,6 +3913,7 @@ export function AvailabilityPlugin() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
       <IncidentBanner
         incidentsData={incidentsData}
@@ -3901,6 +4049,7 @@ export function AvailabilityPlugin() {
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   )
 }
 
