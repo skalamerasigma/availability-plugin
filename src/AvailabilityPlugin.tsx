@@ -1971,11 +1971,12 @@ export function AvailabilityPlugin() {
         if (!convId) return false
         if (assignedMockIdsRef.current.has(convId)) return false
         
-        // Check if it would be breached (over 10 min)
+        // Check elapsed time - only assign if under 7 minutes
+        // Let conversations 7+ minutes old breach naturally (explode animation)
         const waitingSince = conv.waiting_since || conv.created_at
         const elapsed = (Date.now() / 1000) - waitingSince
-        // Only assign if under 9 minutes (give time for animation before breach)
-        return elapsed < 540
+        // Only assign if under 7 minutes - older ones will hit threshold and explode
+        return elapsed < 420
       })
       
       if (availableMocks.length === 0) return
@@ -2007,8 +2008,8 @@ export function AvailabilityPlugin() {
       setAssignedMockIds(prev => new Set(prev).add(toAssign.id))
     }
     
-    // First assignment after 30 seconds, then every 12 seconds
-    const initialTimeout = setTimeout(assignRandomMock, 30000)
+    // First assignment after 90 seconds (let close-to-threshold bubbles breach first)
+    const initialTimeout = setTimeout(assignRandomMock, 90000)
     const interval = setInterval(assignRandomMock, 12000)
     
     return () => {
