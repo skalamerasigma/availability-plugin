@@ -476,21 +476,20 @@ function getMockUnassignedConversations(nowSeconds: number): any[] {
     { id: 'mock-1002', created_at: nowSeconds - 120, waiting_since: nowSeconds - 120, admin_assignee_id: null, admin_assignee: null },  // 2 min
     { id: 'mock-1003', created_at: nowSeconds - 180, waiting_since: nowSeconds - 180, admin_assignee_id: null, admin_assignee: null },  // 3 min
     
-    // Yellow zone: 4-7 minutes (warning, 7-4 minutes remaining)
+    // Yellow zone: 4-6 minutes (warning)
     { id: 'mock-1004', created_at: nowSeconds - 240, waiting_since: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
     { id: 'mock-1005', created_at: nowSeconds - 300, waiting_since: nowSeconds - 300, admin_assignee_id: null, admin_assignee: null },  // 5 min
     { id: 'mock-1006', created_at: nowSeconds - 360, waiting_since: nowSeconds - 360, admin_assignee_id: null, admin_assignee: null },  // 6 min
-    { id: 'mock-1007', created_at: nowSeconds - 420, waiting_since: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },  // 7 min
     
-    // Red zone: 8-9 minutes (critical, less than 4 minutes remaining)
-    { id: 'mock-1008', created_at: nowSeconds - 480, waiting_since: nowSeconds - 480, admin_assignee_id: null, admin_assignee: null },  // 8 min
-    { id: 'mock-1009', created_at: nowSeconds - 540, waiting_since: nowSeconds - 540, admin_assignee_id: null, admin_assignee: null },  // 9 min
+    // Red zone: 8-9 minutes (critical, close to threshold - these will fly away first)
+    { id: 'mock-1007', created_at: nowSeconds - 500, waiting_since: nowSeconds - 500, admin_assignee_id: null, admin_assignee: null },  // 8.3 min
+    { id: 'mock-1008', created_at: nowSeconds - 510, waiting_since: nowSeconds - 510, admin_assignee_id: null, admin_assignee: null },  // 8.5 min
+    { id: 'mock-1009', created_at: nowSeconds - 520, waiting_since: nowSeconds - 520, admin_assignee_id: null, admin_assignee: null },  // 8.7 min
     
     // Breached: 10+ minutes (should appear in breached stack)
     { id: 'mock-1010', created_at: nowSeconds - 610, waiting_since: nowSeconds - 610, admin_assignee_id: null, admin_assignee: null },  // 10.17 min
     { id: 'mock-1011', created_at: nowSeconds - 700, waiting_since: nowSeconds - 700, admin_assignee_id: null, admin_assignee: null },  // 11.67 min
     { id: 'mock-1012', created_at: nowSeconds - 850, waiting_since: nowSeconds - 850, admin_assignee_id: null, admin_assignee: null },  // 14.17 min
-    { id: 'mock-1013', created_at: nowSeconds - 980, waiting_since: nowSeconds - 980, admin_assignee_id: null, admin_assignee: null },  // 16.33 min
   ]
 }
 
