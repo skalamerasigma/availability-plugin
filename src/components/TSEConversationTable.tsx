@@ -113,9 +113,24 @@ function isExcludedTSE(name: string): boolean {
  * These should be excluded from the snoozed count
  */
 function hasWaitingOnCustomerTag(conv: IntercomConversation): boolean {
-  const tags = conv.tags || []
+  // Handle different tag formats from Intercom API:
+  // - Array of strings: ["tag1", "tag2"]
+  // - Array of objects: [{ name: "tag1" }, { name: "tag2" }]
+  // - Object with tags array: { tags: [...] }
+  let tags = conv.tags
+  
+  // If tags is an object with a 'tags' property, extract it
+  if (tags && typeof tags === 'object' && !Array.isArray(tags) && 'tags' in tags) {
+    tags = (tags as { tags: unknown[] }).tags
+  }
+  
+  // Ensure we have an array
+  if (!Array.isArray(tags)) {
+    return false
+  }
+  
   return tags.some(tag => {
-    const tagName = typeof tag === 'string' ? tag : tag.name
+    const tagName = typeof tag === 'string' ? tag : (tag as { name?: string })?.name
     if (!tagName) return false
     const lowerTag = tagName.toLowerCase()
     return lowerTag === 'snooze.waiting-on-customer-resolved' || 
