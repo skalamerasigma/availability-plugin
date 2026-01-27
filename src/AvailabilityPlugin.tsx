@@ -2008,8 +2008,8 @@ export function AvailabilityPlugin() {
       setAssignedMockIds(prev => new Set(prev).add(toAssign.id))
     }
     
-    // First assignment after 8 seconds, then every 12 seconds
-    const initialTimeout = setTimeout(assignRandomMock, 8000)
+    // First assignment after 30 seconds, then every 12 seconds
+    const initialTimeout = setTimeout(assignRandomMock, 30000)
     const interval = setInterval(assignRandomMock, 12000)
     
     return () => {
