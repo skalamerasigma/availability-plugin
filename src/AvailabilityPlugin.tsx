@@ -866,6 +866,24 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
             return `${minutes}m ${remainingSeconds}s`
           }
 
+          // Count only conversations that are actually on the belt (not breached)
+          const beltCount = unassignedConvs.filter((conv) => {
+            const convId = conv.id || conv.conversation_id
+            const createdTimestamp = conv.createdTimestamp
+            if (!createdTimestamp) return false
+            if (convId && removedIdsRef.current.has(convId)) return false
+            if (convId && confirmedBreachedIdsRef.current.has(convId)) return false
+            // Also exclude conversations already over 10 min at startup
+            const waitingSinceTimestamp = conv.waitingSinceTimestamp || conv.waiting_since
+              ? (typeof conv.waiting_since === "number" 
+                  ? (conv.waiting_since > 1e12 ? conv.waiting_since / 1000 : conv.waiting_since)
+                  : (conv.waitingSinceTimestamp || (conv.waiting_since ? new Date(conv.waiting_since).getTime() / 1000 : null)))
+              : null
+            const waitStartTimestamp = waitingSinceTimestamp || createdTimestamp
+            const elapsedSeconds = conveyorBeltCurrentTime - waitStartTimestamp
+            return elapsedSeconds < 600 // Only count if under 10 min
+          }).length
+
           return (
             <div style={{
               display: 'flex',
@@ -889,21 +907,21 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                   marginLeft: '16px',
                   padding: '8px 16px',
                   borderRadius: '999px',
-                  backgroundColor: unassignedConvs.length > 10 
+                  backgroundColor: beltCount > 10 
                     ? 'rgba(253, 135, 137, 0.15)'
-                    : unassignedConvs.length > 5
+                    : beltCount > 5
                     ? 'rgba(255, 193, 7, 0.2)'
                     : 'rgba(76, 236, 140, 0.2)',
-                  color: unassignedConvs.length > 10 
+                  color: beltCount > 10 
                     ? '#fd8789'
-                    : unassignedConvs.length > 5
+                    : beltCount > 5
                     ? '#ffc107'
                     : '#4cec8c',
                   fontSize: '36px',
                   fontWeight: 700,
                   lineHeight: 1
                 }}>
-                  {unassignedConvs.length}
+                  {beltCount}
                 </span>
                 {/* Average Wait Time */}
                 <span style={{
@@ -1729,7 +1747,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
 
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
-  console.log('🚀 PLUGIN VERSION: 8.13 - Median IR from warehouse (IR_PLUGIN.ADJUSTED_IR_S)')
+  console.log('🚀 PLUGIN VERSION: 8.14 - Fix belt count + assign oldest first')
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
@@ -1963,11 +1981,20 @@ export function AvailabilityPlugin() {
       
       if (availableMocks.length === 0) return
       
-      // Pick a random one to "assign"
-      const randomIndex = Math.floor(Math.random() * availableMocks.length)
-      const toAssign = availableMocks[randomIndex]
+      // Sort by longest wait time first (oldest, closest to breaching 10 min)
+      // TSEs pick up conversations from oldest to newest
+      const nowSeconds = Date.now() / 1000
+      availableMocks.sort((a, b) => {
+        const aWait = nowSeconds - (a.waiting_since || a.created_at)
+        const bWait = nowSeconds - (b.waiting_since || b.created_at)
+        return bWait - aWait // Descending: longest wait first
+      })
       
-      console.log('[Mock] Assigned conversation:', toAssign.id)
+      // Pick the oldest one (first after sorting)
+      const toAssign = availableMocks[0]
+      const waitTime = Math.round((nowSeconds - (toAssign.waiting_since || toAssign.created_at)) / 60 * 10) / 10
+      
+      console.log('[Mock] Assigned conversation:', toAssign.id, `(${waitTime} min wait)`)
       setAssignedMockIds(prev => new Set(prev).add(toAssign.id))
     }
     
