@@ -111,6 +111,7 @@ import { TSEConversationTable } from './components/TSEConversationTable'
 import { IncidentBanner } from './components/IncidentBanner'
 import { useAgentDataFromApi } from './hooks/useAgentData'
 import { useIntercomData } from './hooks/useIntercomData'
+import { useDailyMetrics } from './hooks/useDailyMetrics'
 import { TEAM_MEMBERS } from './data/teamMembers'
 import type { City, AgentData, AgentStatus } from './types'
 
@@ -601,8 +602,8 @@ function getMockUnassignedConversations(nowSeconds: number): any[] {
       { id: 'mock-2007', created_at: nowSeconds - 420, waiting_since: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },
       // Bubble at ~78% (7.8 min = 468 sec)
       { id: 'mock-2008', created_at: nowSeconds - 468, waiting_since: nowSeconds - 468, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~85% (8.5 min = 510 sec)
-      { id: 'mock-2009', created_at: nowSeconds - 510, waiting_since: nowSeconds - 510, admin_assignee_id: null, admin_assignee: null },
+      // Bubble at ~98% (9.83 min = 590 sec) - 10 seconds away from breaching
+      { id: 'mock-2009', created_at: nowSeconds - 590, waiting_since: nowSeconds - 590, admin_assignee_id: null, admin_assignee: null },
     ]
   }
 }
@@ -743,25 +744,22 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
           : isConversationUnassigned(result)
 
         if (isUnassigned) {
-          // Check if this is a newly breached conversation
-          if (!confirmedBreachedIdsRef.current.has(conversationId) && !previousBreachedIdsRef.current.has(conversationId)) {
-            // Trigger explosion GIF
-            setExplodingIds(prev => new Set(prev).add(conversationId))
-            // Remove from exploding after GIF plays (1 second)
-            setTimeout(() => {
-              setExplodingIds(prev => {
-                const next = new Set(prev)
-                next.delete(conversationId)
-                return next
-              })
-            }, 1000)
-          }
+          // Still unassigned - keep as breached (already marked as breached immediately)
+          // Just ensure it's in the breached sets
           confirmedBreachedIdsRef.current.add(conversationId)
           previousBreachedIdsRef.current.add(conversationId)
           removedIdsRef.current.delete(conversationId)
         } else {
+          // Has been assigned - remove from breached and mark as removed
           removedIdsRef.current.add(conversationId)
           confirmedBreachedIdsRef.current.delete(conversationId)
+          previousBreachedIdsRef.current.delete(conversationId)
+          // Remove from exploding if it was exploding
+          setExplodingIds(prev => {
+            const next = new Set(prev)
+            next.delete(conversationId)
+            return next
+          })
         }
       })
     } catch (error) {
@@ -780,10 +778,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
     unassignedConvs.forEach((conv) => {
       const convId = conv.id || conv.conversation_id
       if (!convId || String(convId).startsWith('mock-')) return
-      if (checkedIdsRef.current.has(convId)) return
-      if (checkingIdsRef.current.has(convId)) return
       if (removedIdsRef.current.has(convId)) return
-      if (confirmedBreachedIdsRef.current.has(convId)) return
       if (!conv.createdTimestamp) return
 
       // Use waiting_since for elapsed time calculation, fallback to createdTimestamp
@@ -795,11 +790,34 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
       
       const waitStartTimestamp = waitingSinceTimestamp || conv.createdTimestamp
       const elapsedSeconds = now - waitStartTimestamp
-      if (elapsedSeconds < 600) return
-
-      eligibleIds.push(String(convId))
+      
+      // Immediately mark as breached when reaching 10 minutes (don't wait for API call)
+      if (elapsedSeconds >= 600) {
+        // Check if this is a newly breached conversation
+        if (!confirmedBreachedIdsRef.current.has(convId) && !previousBreachedIdsRef.current.has(convId)) {
+          // Trigger explosion GIF immediately
+          setExplodingIds(prev => new Set(prev).add(convId))
+          // Remove from exploding after GIF plays (1 second)
+          setTimeout(() => {
+            setExplodingIds(prev => {
+              const next = new Set(prev)
+              next.delete(convId)
+              return next
+            })
+          }, 1000)
+        }
+        // Mark as breached immediately
+        confirmedBreachedIdsRef.current.add(convId)
+        previousBreachedIdsRef.current.add(convId)
+        
+        // Add to eligible IDs for API check (to verify if still unassigned)
+        if (!checkedIdsRef.current.has(convId) && !checkingIdsRef.current.has(convId)) {
+          eligibleIds.push(String(convId))
+        }
+      }
     })
 
+    // Only check assignments for conversations that just breached (API call verifies if still unassigned)
     if (eligibleIds.length === 0) return
 
     const batchSize = 20
@@ -897,7 +915,20 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
       
       // This conversation was assigned before breaching! Trigger fly-away
       const savedData = conversationDataRef.current.get(prevId)
-      if (savedData && savedData.progress < 100) {
+      console.log('[Reso Queue] Checking fly-away for:', prevId, {
+        hasSavedData: !!savedData,
+        progress: savedData?.progress,
+        progressLessThan100: savedData ? savedData.progress < 100 : false,
+        isMock: String(prevId).startsWith('mock-')
+      })
+      
+      // For mock conversations, always trigger fly-away if we have data
+      // For real conversations, only trigger if progress < 100 (not breached)
+      const shouldTriggerFlyAway = savedData && (
+        String(prevId).startsWith('mock-') || savedData.progress < 100
+      )
+      
+      if (shouldTriggerFlyAway) {
         console.log('[Reso Queue] Conversation assigned, triggering fly-away:', prevId)
         
         // Store the position data for animation
@@ -1395,8 +1426,8 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
             )
           })}
           
-          {/* Breached Section */}
-          {(() => {
+          {/* Breached Section - HIDDEN FOR NOW */}
+          {false && (() => {
             // TEMPORARILY UNHIDDEN FOR TESTING - Hide breached section during cutoff period (2 AM UTC to 10 AM UTC)
             // if (!isInCountingWindow) return null
 
@@ -1873,7 +1904,6 @@ export function AvailabilityPlugin() {
   const activeTSEsElementId = config.activeTSEsSource as string
   const awayTSEsElementId = config.awayTSEsSource as string
   const tseConversationElementId = config.tseConversationSource as string
-  const irElementId = config.irSource as string
   
   // Debug: Log element IDs immediately after extraction
   console.log('🔍 [AvailabilityPlugin] Element IDs from config:')
@@ -1907,7 +1937,6 @@ export function AvailabilityPlugin() {
   const activeTSEsData = activeTSEsElementId ? useElementData(activeTSEsElementId) : undefined
   const awayTSEsData = awayTSEsElementId ? useElementData(awayTSEsElementId) : undefined
   const tseConversationData = tseConversationElementId ? useElementData(tseConversationElementId) : undefined
-  const irData = irElementId ? useElementData(irElementId) : undefined
   
   // Debug: Log what useElementData returns immediately
   console.log('🔍 [AvailabilityPlugin] useElementData results:')
@@ -2068,10 +2097,19 @@ export function AvailabilityPlugin() {
     
     if (!isLocalhost) return
     
-    // SCENARIO 2: No fly-away animation - bubbles stay on belt
+    // SCENARIO 2: Assign mock-2008 (second bubble) to fly away 5 seconds after component starts
     if (MOCK_SCENARIO === 2) {
-      console.log('[Mock] Scenario 2 active - fly-away disabled, 9 bubbles will stay on belt')
-      return
+      // Assign mock-2008 after 5 seconds
+      const timeout = setTimeout(() => {
+        if (!assignedMockIdsRef.current.has('mock-2008')) {
+          console.log('[Mock] ✈️ Assigning mock-2008 (7.8 min wait) - 5 seconds after start')
+          setAssignedMockIds(prev => new Set(prev).add('mock-2008'))
+        }
+      }, 5000)
+      
+      return () => {
+        clearTimeout(timeout)
+      }
     }
     
     // SCENARIO 1: Assign mock conversation periodically (simulating TSE picking up chats)
@@ -2129,7 +2167,7 @@ export function AvailabilityPlugin() {
       clearTimeout(initialTimeout)
       clearInterval(interval)
     }
-  }, []) // Empty dependency - only run once on mount
+  }, [unassignedConversationsData]) // Dependencies for Scenario 2 breach detection
   
   // =================================================================
   // INTERCOM DATA HOOK - Fetches conversations & team members from
@@ -2144,9 +2182,30 @@ export function AvailabilityPlugin() {
     lastUpdated: intercomLastUpdated,
     // refresh: refreshIntercomData, // Available for manual refresh if needed
   } = useIntercomData({
-    skipClosed: false, // Include closed conversations to show "Closed Today" count
+    skipClosed: true, // Skip closed conversations for faster loading - we get counts from daily-metrics endpoint
     autoRefresh: true,
     refreshInterval: 120000, // 2 minutes - matches queue-health-monitor
+  })
+  
+  // =================================================================
+  // DAILY METRICS HOOK - Fast endpoint for chats today & closed today
+  // Uses optimized Intercom search queries instead of loading all conversations
+  // =================================================================
+  const {
+    metrics: dailyMetrics,
+    loading: dailyMetricsLoading,
+    error: dailyMetricsError,
+  } = useDailyMetrics({
+    autoRefresh: true,
+    refreshInterval: 60000, // 1 minute - faster refresh for real-time counts
+  })
+  
+  // Debug: Log when daily metrics change
+  console.log('📊 [Daily Metrics] Data received:', {
+    chatsToday: dailyMetrics?.chatsToday,
+    closedToday: dailyMetrics?.closedToday,
+    loading: dailyMetricsLoading,
+    error: dailyMetricsError,
   })
   
   // Debug: Log when Intercom data changes
@@ -2183,6 +2242,13 @@ export function AvailabilityPlugin() {
       )
     }
   }, [intercomConversations, intercomTeamMembers, intercomLoading, intercomError, intercomLastUpdated])
+  
+  // Sync lastUpdated state with intercomLastUpdated when Intercom data refreshes
+  useEffect(() => {
+    if (intercomLastUpdated) {
+      setLastUpdated(intercomLastUpdated)
+    }
+  }, [intercomLastUpdated])
   
   // =================================================================
   // TOTAL CHATS TAKEN TODAY (from Intercom data)
@@ -2344,62 +2410,69 @@ export function AvailabilityPlugin() {
   }, [intercomConversations])
   
   // =================================================================
-  // MEDIAN INITIAL RESPONSE TIME (from Sigma warehouse - IR_PLUGIN view)
-  // Reads ADJUSTED_IR_S column from SIGMA_ON_SIGMA.SIGMA_WRITABLE.IR_PLUGIN
-  // The view is already filtered to today's conversations
+  // MEDIAN INITIAL RESPONSE TIME (calculated from Intercom conversations API)
+  // Calculates from first_admin_reply_at - created_at for today's conversations
   // =================================================================
   const medianResponseTime = useMemo(() => {
-    // Get the column ID for ADJUSTED_IR_S from config
-    const irColumnId = config.irAdjustedIrS as string
-    
-    if (!irData || !irColumnId) {
-      console.log('[AvailabilityPlugin] Median IR: No IR data or column ID', { 
-        hasIrData: !!irData, 
-        irColumnId,
-        irDataKeys: irData ? Object.keys(irData) : []
-      })
+    if (!intercomConversations || intercomConversations.length === 0) {
+      console.log('[AvailabilityPlugin] Median IR: No Intercom conversations data')
       return null
     }
-    
-    // Get the array of ADJUSTED_IR_S values from the data
-    const irValues = irData[irColumnId] as (number | null | undefined)[]
-    
-    if (!irValues || !Array.isArray(irValues) || irValues.length === 0) {
-      console.log('[AvailabilityPlugin] Median IR: No values found', {
-        irColumnId,
-        irValuesType: typeof irValues,
-        isArray: Array.isArray(irValues)
-      })
-      return null
-    }
-    
-    // Filter out null/undefined values and collect valid response times
+
+    // Get today's date range (UTC, same as Intercom timestamps)
+    const now = new Date()
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0))
+    const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59))
+    const todayStartTimestamp = Math.floor(todayStart.getTime() / 1000)
+    const todayEndTimestamp = Math.floor(todayEnd.getTime() / 1000)
+
+    // Calculate response times for conversations created today with first admin reply
     const responseTimes: number[] = []
-    irValues.forEach(val => {
-      if (val !== null && val !== undefined && typeof val === 'number' && val > 0 && val < 86400) {
-        responseTimes.push(val)
+    
+    intercomConversations.forEach(conv => {
+      const createdAt = conv.created_at
+      const firstAdminReplyAt = conv.statistics?.first_admin_reply_at
+
+      // Must be created today
+      if (!createdAt || createdAt < todayStartTimestamp || createdAt > todayEndTimestamp) {
+        return
+      }
+
+      // Must have a first admin reply
+      if (!firstAdminReplyAt || firstAdminReplyAt <= createdAt) {
+        return
+      }
+
+      // Calculate response time in seconds
+      const responseTimeSeconds = firstAdminReplyAt - createdAt
+
+      // Filter out unreasonable values (more than 24 hours or negative)
+      if (responseTimeSeconds > 0 && responseTimeSeconds < 86400) {
+        responseTimes.push(responseTimeSeconds)
       }
     })
-    
-    console.log('[AvailabilityPlugin] Median IR from warehouse:', {
-      totalRows: irValues.length,
-      validValues: responseTimes.length
+
+    console.log('[AvailabilityPlugin] Median IR from Intercom API:', {
+      totalConversations: intercomConversations.length,
+      validResponseTimes: responseTimes.length
     })
-    
-    if (responseTimes.length === 0) return null
-    
+
+    if (responseTimes.length === 0) {
+      return null
+    }
+
     // Sort the response times
     responseTimes.sort((a, b) => a - b)
-    
+
     // Calculate median
     const mid = Math.floor(responseTimes.length / 2)
     const median = responseTimes.length % 2 === 0
       ? (responseTimes[mid - 1] + responseTimes[mid]) / 2
       : responseTimes[mid]
-    
+
     console.log('[AvailabilityPlugin] Median response time:', Math.round(median), 'seconds from', responseTimes.length, 'conversations')
     return Math.round(median)
-  }, [irData, config.irAdjustedIrS])
+  }, [intercomConversations])
   
   // =================================================================
   // HISTORICAL METRICS - Fetch previous days data for trending
@@ -3922,12 +3995,20 @@ export function AvailabilityPlugin() {
         sevStatusColumn={config.incidentSevStatus as string | undefined}
         incidentCreatedAtColumn={config.incidentCreatedAt as string | undefined}
         incidentUpdatedAtColumn={config.incidentUpdatedAt as string | undefined}
-        chatCount={totalChatsTakenToday}
-        closedCount={totalClosedToday}
+        chatCount={dailyMetrics?.chatsToday ?? totalChatsTakenToday}
+        closedCount={dailyMetrics?.closedToday ?? totalClosedToday}
         chatsTrending={chatsTrending}
         previousClosed={historicalMetrics.yesterdayClosed}
         zoomCallCount={zoomCallCount}
         medianResponseTime={medianResponseTime}
+        teamMembers={intercomTeamMembers.length > 0 ? intercomTeamMembers : TEAM_MEMBERS.map(m => ({
+          id: m.id,
+          name: m.name,
+          email: undefined,
+          avatar: {
+            image_url: m.avatar
+          }
+        }))}
       />
       <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}
@@ -3963,11 +4044,15 @@ export function AvailabilityPlugin() {
                 position: 'absolute',
                 top: 0,
                 right: 0,
-                fontSize: '11px',
+                fontSize: '12px',
                 color: '#6b7280',
-                fontWeight: 400
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
               }}>
-                Last updated: {formatLastUpdated(lastUpdated)}
+                <span style={{ opacity: 0.7 }}>Last updated:</span>
+                <span style={{ fontWeight: 600 }}>{formatLastUpdated(lastUpdated)}</span>
               </div>
             </div>
             <ResoQueueBelt unassignedConvs={unassignedConvs} chatsTodayCount={totalChatsTakenToday} />
