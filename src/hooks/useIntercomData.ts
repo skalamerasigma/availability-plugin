@@ -223,13 +223,18 @@ export function filterConversationsByState(
 
 /**
  * Get conversations with specific snooze workflow
- * Checks custom_attributes["Last Snooze Workflow Used"]
+ * Checks custom_attributes["Last Snooze Workflow Used"] AND ensures conversation is snoozed
  */
 export function filterConversationsByWorkflow(
   conversations: IntercomConversation[],
-  workflow: 'Waiting On TSE' | 'Waiting On Customer - Resolved' | 'Waiting On Customer - Unresolved'
+  workflow: 'Waiting On TSE - Deep Dive' | 'Waiting On Customer - Resolved' | 'Waiting On Customer - Unresolved'
 ): IntercomConversation[] {
   return conversations.filter(conv => {
+    // First check if conversation is actually snoozed
+    const isSnoozed = conv.state === 'snoozed' || conv.snoozed_until
+    if (!isSnoozed) return false
+    
+    // Then check the workflow
     const customAttributes = conv.custom_attributes || {}
     const lastSnoozeWorkflow = customAttributes['Last Snooze Workflow Used']
     return lastSnoozeWorkflow === workflow
@@ -262,7 +267,7 @@ export function calculateTSEMetrics(conversations: IntercomConversation[]) {
       open++
     } else if (isSnoozed) {
       totalSnoozed++
-      if (lastSnoozeWorkflow === 'Waiting On TSE') {
+      if (lastSnoozeWorkflow === 'Waiting On TSE - Deep Dive') {
         waitingOnTSE++
       } else if (lastSnoozeWorkflow === 'Waiting On Customer - Resolved') {
         waitingOnCustomerResolved++
