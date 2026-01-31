@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 
 interface TrendingData {
   direction: 'up' | 'down'
@@ -14,6 +14,15 @@ interface OnCallPerson {
   endAt?: string
 }
 
+interface TeamMember {
+  id: string | number
+  name: string
+  email?: string
+  avatar?: {
+    image_url?: string
+  }
+}
+
 interface IncidentBannerProps {
   incidentsData: Record<string, unknown> | null | undefined
   incidentsColumns: Record<string, { name: string }> | undefined
@@ -27,6 +36,7 @@ interface IncidentBannerProps {
   previousClosed?: number | null
   zoomCallCount?: number
   medianResponseTime?: number | null
+  teamMembers?: TeamMember[]
 }
 
 interface Incident {
@@ -36,7 +46,7 @@ interface Incident {
   incidentUpdatedAt: string
 }
 
-const INCIDENT_IO_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769419778/Untitled_design_29_jomb69.svg'
+const INCIDENT_IO_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769535474/Untitled_design_30_w9bwzy.svg'
 const ZOOM_ICON_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769458061/1996_Nintendo_22_oorusp.svg'
 const ROTATION_INTERVAL_MS = 10000 // 10 seconds
 
@@ -53,9 +63,13 @@ export function IncidentBanner({
   previousClosed,
   zoomCallCount,
   medianResponseTime,
+  teamMembers = [],
 }: IncidentBannerProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [onCallData, setOnCallData] = useState<OnCallPerson[]>([])
+  const onCallScrollRef = useRef<HTMLDivElement>(null)
+  const scrollIntervalRef = useRef<number | null>(null)
+  const [isScrollingPaused, setIsScrollingPaused] = useState(false)
 
   // Fetch on-call data from Incident.io
   const fetchOnCallData = useCallback(async () => {
@@ -67,6 +81,8 @@ export function IncidentBanner({
       }
       const data = await response.json()
       console.log('[IncidentBanner] On-call data:', data)
+      console.log('[IncidentBanner] On-call count:', data.onCall?.length || 0)
+      console.log('[IncidentBanner] On-call schedules:', data.onCall?.map((p: OnCallPerson) => p.scheduleName) || [])
       setOnCallData(data.onCall || [])
     } catch (error) {
       console.error('[IncidentBanner] Error fetching on-call data:', error)
@@ -80,10 +96,132 @@ export function IncidentBanner({
     return () => clearInterval(interval)
   }, [fetchOnCallData])
 
+  // Auto-scroll on-call people horizontally with seamless loop
+  useEffect(() => {
+    if (!onCallScrollRef.current || onCallData.length === 0 || isScrollingPaused) {
+      return
+    }
+
+    const scrollContainer = onCallScrollRef.current
+    const scrollWidth = scrollContainer.scrollWidth
+    const clientWidth = scrollContainer.clientWidth
+
+    // Only scroll if content overflows
+    if (scrollWidth <= clientWidth) {
+      return
+    }
+
+    // Calculate the width of one set of items (for seamless looping)
+    const firstItem = scrollContainer.firstElementChild as HTMLElement
+    if (!firstItem) return
+    
+    const itemWidth = firstItem.offsetWidth + 12 // 12px gap
+    const itemsPerSet = onCallData.length
+    const setWidth = itemWidth * itemsPerSet
+
+    let scrollPosition = scrollContainer.scrollLeft
+    const scrollSpeed = 0.5 // pixels per frame
+
+    const scroll = () => {
+      scrollPosition += scrollSpeed
+      
+      // Reset to start when reaching the end of first set (seamless loop)
+      if (scrollPosition >= setWidth) {
+        scrollPosition = scrollPosition - setWidth
+        scrollContainer.scrollLeft = scrollPosition
+      } else {
+        scrollContainer.scrollLeft = scrollPosition
+      }
+    }
+
+    // Use requestAnimationFrame for smooth scrolling
+    const animate = () => {
+      if (!isScrollingPaused && scrollContainer) {
+        scroll()
+        scrollIntervalRef.current = requestAnimationFrame(animate) as unknown as number
+      }
+    }
+
+    scrollIntervalRef.current = requestAnimationFrame(animate) as unknown as number
+
+    return () => {
+      if (scrollIntervalRef.current !== null) {
+        cancelAnimationFrame(scrollIntervalRef.current)
+      }
+    }
+  }, [onCallData.length, isScrollingPaused])
+
   // Get first name from full name
   const getFirstName = (fullName: string): string => {
     if (!fullName) return fullName
     return fullName.split(' ')[0]
+  }
+
+  // Map schedule name to badge label
+  const getBadgeLabel = (scheduleName: string): string => {
+    if (scheduleName === 'TSE Manager - Escalations') {
+      return 'ESCALATIONS'
+    }
+    if (scheduleName === 'TSE Manager - Incidents') {
+      return 'INCIDENTS'
+    }
+    if (scheduleName === '3 - Support On-Call Primary 24x7') {
+      return 'PRIMARY'
+    }
+    if (scheduleName === '4 - Support On-Call Backup 24x7') {
+      return 'BACKUP'
+    }
+    if (scheduleName === 'TSE - Tier 3') {
+      return 'TIER3'
+    }
+    // Fallback for any other schedules
+    return 'ON-CALL'
+  }
+
+  // Direct avatar overrides for on-call people with ambiguous first names
+  const ON_CALL_AVATAR_OVERRIDES: Record<string, string> = {
+    'Nathan Parrish': 'https://ca.slack-edge.com/E07M25LCK1V-U056CEX10HE-6c588ca5f698-512',
+  }
+
+  // Find team member by email or name to get avatar
+  const getTeamMemberAvatar = (person: OnCallPerson): string | undefined => {
+    // Check for direct avatar overrides first (for people with ambiguous first names)
+    const override = ON_CALL_AVATAR_OVERRIDES[person.name]
+    if (override) {
+      console.log(`[IncidentBanner] Using avatar override for ${person.name}:`, override)
+      return override
+    }
+
+    if (!teamMembers || teamMembers.length === 0) {
+      console.log('[IncidentBanner] No team members available for avatar lookup')
+      return undefined
+    }
+    
+    // Try to find by email first (most reliable)
+    if (person.email) {
+      const member = teamMembers.find(m => 
+        m.email && m.email.toLowerCase() === person.email?.toLowerCase()
+      )
+      if (member?.avatar?.image_url) {
+        console.log(`[IncidentBanner] Found avatar for ${person.name} by email:`, member.avatar.image_url)
+        return member.avatar.image_url
+      }
+    }
+    
+    // Fallback: try to find by name (first name match)
+    const firstName = getFirstName(person.name)
+    const member = teamMembers.find(m => {
+      const memberFirstName = getFirstName(m.name)
+      return memberFirstName.toLowerCase() === firstName.toLowerCase()
+    })
+    
+    if (member?.avatar?.image_url) {
+      console.log(`[IncidentBanner] Found avatar for ${person.name} by name:`, member.avatar.image_url)
+      return member.avatar.image_url
+    }
+    
+    console.log(`[IncidentBanner] No avatar found for ${person.name}. Available team members:`, teamMembers.map(m => ({ name: m.name, email: m.email, hasAvatar: !!m.avatar?.image_url })))
+    return undefined
   }
 
   // Format response time in seconds to human-readable format
@@ -351,10 +489,18 @@ export function IncidentBanner({
   return (
     <div className="incident-banner">
       <div className="incident-banner-content">
+        {/* Incident.io Logo - Top Right Corner */}
+        <div className="incident-banner-logo-icon">
+          <img
+            src={INCIDENT_IO_LOGO_URL}
+            alt="Incident.io"
+          />
+        </div>
+
         {/* Dashboard Logo */}
         <div className="dashboard-logo">
           <img
-            src="https://res.cloudinary.com/doznvxtja/image/upload/v1769422949/SQL_13_oeoajg.svg"
+            src="https://res.cloudinary.com/doznvxtja/image/upload/v1769680535/SQL_14_ielazn.svg"
             alt="Dashboard"
           />
         </div>
@@ -394,6 +540,19 @@ export function IncidentBanner({
           </>
         )}
 
+        {/* Median Response Time */}
+        {medianResponseTime !== undefined && medianResponseTime !== null && (
+          <>
+            <div className="incident-banner-divider"></div>
+            <div className="response-time-section">
+              <div className="response-time-value">
+                {formatResponseTime(medianResponseTime)}
+              </div>
+              <div className="response-time-label">Median Response</div>
+            </div>
+          </>
+        )}
+
         {/* Zoom Call Count */}
         {zoomCallCount !== undefined && (
           <>
@@ -414,49 +573,10 @@ export function IncidentBanner({
           </>
         )}
 
-        {/* Median Response Time */}
-        {medianResponseTime !== undefined && medianResponseTime !== null && (
-          <>
-            <div className="incident-banner-divider"></div>
-            <div className="response-time-section">
-              <div className="response-time-value">
-                {formatResponseTime(medianResponseTime)}
-              </div>
-              <div className="response-time-label">Median Response</div>
-            </div>
-          </>
-        )}
-
-        {/* Vertical Divider */}
-        <div className="incident-banner-divider"></div>
-
         {/* Incident Section - Right Aligned */}
-        <div className="incident-banner-incident-section">
-          {/* Incident.io Logo */}
-          <div className="incident-banner-logo">
-            <img
-              src={INCIDENT_IO_LOGO_URL}
-              alt="Incident.io"
-            />
-          </div>
-
-          {/* On-Call Display */}
-          {onCallData.length > 0 && (
-            <div className="on-call-section">
-              <div className="on-call-label">On-Call</div>
-              <div className="on-call-people">
-                {onCallData.map((person, idx) => (
-                  <div key={idx} className="on-call-person">
-                    <span className="on-call-name">{getFirstName(person.name)}</span>
-                    <span className="on-call-type">
-                      {person.scheduleType === 'escalations' ? 'Esc' : 'Inc'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
+        <div className="incident-banner-incident-section-wrapper">
+          <div className="incident-banner-divider"></div>
+          <div className="incident-banner-incident-section">
           {/* Incident Info */}
           <div className="incident-banner-details">
             {hasIncidents && currentIncident ? (
@@ -519,6 +639,64 @@ export function IncidentBanner({
               ))}
             </div>
           )}
+
+          {/* On-Call Display - Bottom of Incident Section */}
+          {onCallData.length > 0 && (
+            <div className="on-call-section">
+              <div 
+                ref={onCallScrollRef}
+                className="on-call-people"
+                onMouseEnter={() => setIsScrollingPaused(true)}
+                onMouseLeave={() => setIsScrollingPaused(false)}
+              >
+                {/* Render items twice for seamless looping */}
+                {[...onCallData, ...onCallData].map((person, idx) => {
+                  const avatar = getTeamMemberAvatar(person)
+                  const badgeLabel = getBadgeLabel(person.scheduleName)
+                  return (
+                    <div key={idx} className="on-call-person">
+                      {avatar ? (
+                        <img 
+                          src={avatar} 
+                          alt={person.name}
+                          className="on-call-avatar"
+                          onError={(e) => {
+                            console.error(`[IncidentBanner] Failed to load avatar for ${person.name}:`, avatar)
+                            // Hide image on error
+                            e.currentTarget.style.display = 'none'
+                          }}
+                          onLoad={() => {
+                            console.log(`[IncidentBanner] Successfully loaded avatar for ${person.name}`)
+                          }}
+                        />
+                      ) : (
+                        <div className="on-call-avatar" style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          backgroundColor: '#e5e7eb',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#9ca3af',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          flexShrink: 0
+                        }}>
+                          {getFirstName(person.name).charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="on-call-name">{getFirstName(person.name)}</span>
+                      <span className="on-call-type">
+                        {badgeLabel}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          </div>
         </div>
       </div>
     </div>
