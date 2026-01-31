@@ -171,7 +171,7 @@ export function TSEStatusSummary({
         <div className="tse-status-stat">
           <div className="tse-status-stat-value tse-status-active">{counts.active}</div>
           <div className="tse-status-stat-label">TSEs Active</div>
-          <div style={{ fontSize: '10px', color: '#999', marginTop: '4px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
             {scheduleData && scheduleTSE 
               ? '(Scheduled TSEs without "away" status)' 
               : '(Counted from active cities on timeline)'}
@@ -180,7 +180,7 @@ export function TSEStatusSummary({
         <div className="tse-status-stat">
           <div className="tse-status-stat-value tse-status-away">{counts.awayButShouldBeActive}</div>
           <div className="tse-status-stat-label">Away (Should Be Active)</div>
-          <div style={{ fontSize: '10px', color: '#999', marginTop: '4px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
             (Scheduled TSEs with "away" status)
           </div>
         </div>

@@ -249,7 +249,7 @@ export function FallbackGauge({
   
   return (
     <div className="fallback-gauges">
-      <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: '#333', textAlign: 'center' }}>
+      <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--text-primary)', textAlign: 'center' }}>
         Fallback Schedule Risk
       </h3>
       {regionStats.map((stats) => (

@@ -42,21 +42,21 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       return (
         <div style={{
           padding: '20px',
-          backgroundColor: '#fff3f3',
-          border: '1px solid #fd8789',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
           borderRadius: '8px',
           margin: '20px',
           fontFamily: 'system-ui, -apple-system, sans-serif'
         }}>
-          <h2 style={{ color: '#d32f2f', margin: '0 0 10px 0' }}>Something went wrong</h2>
-          <p style={{ color: '#333', margin: '0 0 15px 0' }}>
+          <h2 style={{ color: 'var(--status-red)', margin: '0 0 10px 0' }}>Something went wrong</h2>
+          <p style={{ color: 'var(--text-primary)', margin: '0 0 15px 0' }}>
             The plugin encountered an error. Try refreshing the page.
           </p>
           <button
             onClick={() => window.location.reload()}
             style={{
-              backgroundColor: '#1976d2',
-              color: 'white',
+              backgroundColor: 'var(--status-blue)',
+              color: 'var(--text-inverse)',
               border: 'none',
               padding: '10px 20px',
               borderRadius: '4px',
@@ -70,9 +70,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <button
             onClick={() => this.setState({ hasError: false, error: null, errorInfo: '' })}
             style={{
-              backgroundColor: '#fff',
-              color: '#1976d2',
-              border: '1px solid #1976d2',
+              backgroundColor: 'var(--bg-card)',
+              color: 'var(--status-blue)',
+              border: '1px solid var(--status-blue)',
               padding: '10px 20px',
               borderRadius: '4px',
               cursor: 'pointer',
@@ -81,15 +81,16 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           >
             Try Again
           </button>
-          <details style={{ marginTop: '15px', fontSize: '12px', color: '#666' }}>
+          <details style={{ marginTop: '15px', fontSize: '12px', color: 'var(--text-secondary)' }}>
             <summary style={{ cursor: 'pointer' }}>Error Details</summary>
             <pre style={{ 
-              backgroundColor: '#f5f5f5', 
+              backgroundColor: 'var(--bg-card-secondary)', 
               padding: '10px', 
               borderRadius: '4px',
               overflow: 'auto',
               maxHeight: '200px',
-              marginTop: '10px'
+              marginTop: '10px',
+              color: 'var(--text-primary)'
             }}>
               {this.state.error?.toString()}
               {this.state.errorInfo}
@@ -109,6 +110,7 @@ import { OfficeHours } from './components/OfficeHours'
 import { OOOProfilePictures } from './components/OOOProfilePictures'
 import { TSEConversationTable } from './components/TSEConversationTable'
 import { IncidentBanner } from './components/IncidentBanner'
+import { DarkModeToggle } from './components/DarkModeToggle'
 import { useAgentDataFromApi } from './hooks/useAgentData'
 import { useIntercomData } from './hooks/useIntercomData'
 import { useDailyMetrics } from './hooks/useDailyMetrics'
@@ -1032,7 +1034,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                 margin: 0,
                 fontSize: '18px',
                 fontWeight: 600,
-                color: '#333',
+                color: 'var(--text-primary)',
                 display: 'flex',
                 alignItems: 'center'
               }}>
@@ -1097,7 +1099,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
           maxWidth: '100%',
           height: '120px',
           position: 'relative',
-          backgroundColor: 'transparent',
+          backgroundColor: 'var(--bg-body)',
           overflow: 'visible',
           marginBottom: '32px',
           marginLeft: 0,
@@ -1140,14 +1142,14 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
             top: '-22px',
             fontSize: '13px',
             fontWeight: 700,
-            color: '#cc9900',
-            backgroundColor: 'rgba(255, 193, 7, 0.2)',
+            color: 'var(--text-primary)',
+            backgroundColor: 'rgba(255, 193, 7, 0.3)',
             padding: '3px 8px',
             borderRadius: '4px',
             zIndex: 11,
             whiteSpace: 'nowrap',
             transform: 'translateX(-50%)',
-            textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
+            textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)'
           }}>
             5 min
           </div>
@@ -1171,14 +1173,14 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
             top: '-22px',
             fontSize: '13px',
             fontWeight: 700,
-            color: '#fd8789',
-            backgroundColor: 'rgba(253, 135, 137, 0.2)',
+            color: 'var(--text-primary)',
+            backgroundColor: 'rgba(253, 135, 137, 0.3)',
             padding: '3px 8px',
             borderRadius: '4px',
             zIndex: 11,
             whiteSpace: 'nowrap',
             transform: 'translateX(50%)',
-            textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
+            textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)'
           }}>
             10 min
           </div>
@@ -1885,6 +1887,26 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
 export function AvailabilityPlugin() {
   // VERSION CHECK - if you don't see this, you're running cached code!
   console.log('🚀 PLUGIN VERSION: 8.15 - Fix sort to not mutate cached array')
+  
+  // Dark mode state management
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode')
+    return saved === 'true'
+  })
+
+  useEffect(() => {
+    const root = document.documentElement || document.body
+    if (isDarkMode) {
+      root.classList.add('dark-mode')
+    } else {
+      root.classList.remove('dark-mode')
+    }
+    localStorage.setItem('darkMode', String(isDarkMode))
+  }, [isDarkMode])
+
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => !prev)
+  }
   
   // Debug: Check if client is available
   console.log('[Client Check] client object:', typeof client)
@@ -3959,24 +3981,25 @@ export function AvailabilityPlugin() {
   if (!hasAnyData && agents.length === 0) {
     return (
       <div className="app" style={{ padding: '20px' }}>
+        <DarkModeToggle isDarkMode={isDarkMode} onToggle={toggleDarkMode} />
         <div style={{ 
-          background: '#fff', 
+          background: 'var(--bg-card)', 
           padding: '24px', 
           borderRadius: '8px', 
           maxWidth: '500px',
           margin: '0 auto',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          boxShadow: 'var(--shadow-md)'
         }}>
-          <h3 style={{ margin: '0 0 16px', color: '#333' }}>📊 Connect Data Sources</h3>
-          <p style={{ color: '#666', marginBottom: '16px' }}>
+          <h3 style={{ margin: '0 0 16px', color: 'var(--text-primary)' }}>📊 Connect Data Sources</h3>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>
             To display agent availability, connect your Sigma worksheets in the plugin configuration panel:
           </p>
-          <ol style={{ color: '#666', paddingLeft: '20px', lineHeight: '1.8' }}>
+          <ol style={{ color: 'var(--text-secondary)', paddingLeft: '20px', lineHeight: '1.8' }}>
             <li><strong>scheduleSource</strong>: Connect to <code>TSE_SCHEDULE_CURRENT</code> worksheet</li>
             <li><strong>source</strong>: Connect to <code>DASHBOARD_OF_TSES_AND_THEIR_STATUS</code> worksheet</li>
             <li><strong>oooSource</strong>: Connect to <code>SIGMA_ON_SIGMA.SIGMA_WRITABLE.OOO</code> view (for OOO filtering)</li>
           </ol>
-          <p style={{ color: '#888', fontSize: '12px', marginTop: '16px' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '16px' }}>
             Debug: scheduleData keys: {Object.keys(scheduleData || {}).length}, 
             sigmaData keys: {Object.keys(sigmaData || {}).length}
           </p>
@@ -3988,6 +4011,7 @@ export function AvailabilityPlugin() {
   return (
     <ErrorBoundary>
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
+      <DarkModeToggle isDarkMode={isDarkMode} onToggle={toggleDarkMode} />
       <IncidentBanner
         incidentsData={incidentsData}
         incidentsColumns={incidentsColumns}
@@ -4045,7 +4069,7 @@ export function AvailabilityPlugin() {
                 top: 0,
                 right: 0,
                 fontSize: '12px',
-                color: '#6b7280',
+                color: 'var(--text-secondary)',
                 fontWeight: 500,
                 display: 'flex',
                 alignItems: 'center',

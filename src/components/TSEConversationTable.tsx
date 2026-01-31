@@ -19,7 +19,10 @@ interface TSEDetailData {
   avatar: string
   region: string
   open: IntercomConversation[]
-  snoozed: IntercomConversation[]
+  allSnoozed: IntercomConversation[]
+  waitingOnCustomerResolved: IntercomConversation[]
+  waitingOnCustomerUnresolved: IntercomConversation[]
+  waitingOnTSE: IntercomConversation[]
   closed: IntercomConversation[]
   taken: IntercomConversation[]
 }
@@ -109,33 +112,22 @@ function isExcludedTSE(name: string): boolean {
 }
 
 /**
- * Check if a conversation has a "waiting on customer" tag
+ * Get the snooze workflow type from custom attributes
+ * Returns the value of "Last Snooze Workflow Used" or null if not set
+ */
+function getSnoozeWorkflow(conv: IntercomConversation): string | null {
+  const customAttributes = conv.custom_attributes || {}
+  return customAttributes['Last Snooze Workflow Used'] || null
+}
+
+/**
+ * Check if a conversation has a "waiting on customer" workflow
  * These should be excluded from the snoozed count
  */
-function hasWaitingOnCustomerTag(conv: IntercomConversation): boolean {
-  // Handle different tag formats from Intercom API:
-  // - Array of strings: ["tag1", "tag2"]
-  // - Array of objects: [{ name: "tag1" }, { name: "tag2" }]
-  // - Object with tags array: { tags: [...] }
-  let tags = conv.tags
-  
-  // If tags is an object with a 'tags' property, extract it
-  if (tags && typeof tags === 'object' && !Array.isArray(tags) && 'tags' in tags) {
-    tags = (tags as { tags: unknown[] }).tags
-  }
-  
-  // Ensure we have an array
-  if (!Array.isArray(tags)) {
-    return false
-  }
-  
-  return tags.some(tag => {
-    const tagName = typeof tag === 'string' ? tag : (tag as { name?: string })?.name
-    if (!tagName) return false
-    const lowerTag = tagName.toLowerCase()
-    return lowerTag === 'snooze.waiting-on-customer-resolved' || 
-           lowerTag === 'snooze.waiting-on-customer-unresolved'
-  })
+function hasWaitingOnCustomerWorkflow(conv: IntercomConversation): boolean {
+  const workflow = getSnoozeWorkflow(conv)
+  return workflow === 'Waiting On Customer - Resolved' || 
+         workflow === 'Waiting On Customer - Unresolved'
 }
 
 /**
@@ -188,7 +180,7 @@ function isChatTakenToday(conv: IntercomConversation): boolean {
 /**
  * Calculate TSE counts from Intercom conversations
  * - Open: count of open conversations
- * - Snoozed: count of snoozed conversations (excluding waiting-on-customer tags)
+ * - Snoozed: count of snoozed conversations (excluding waiting-on-customer workflows)
  * - Closed: count of closed conversations for current day
  * - Chats Taken: count of conversations created today and responded to today
  */
@@ -242,8 +234,8 @@ function calculateTSECountsFromIntercom(
       // Open: count of open conversations
       counts.open++
     } else if (isSnoozed) {
-      // Snoozed: exclude conversations with waiting-on-customer tags
-      if (!hasWaitingOnCustomerTag(conv)) {
+      // Snoozed: exclude conversations with waiting-on-customer workflows
+      if (!hasWaitingOnCustomerWorkflow(conv)) {
         counts.snoozed++
       }
     } else if (state === 'closed') {
@@ -299,7 +291,10 @@ function getTSEConversations(
   else if (timezone.includes('London')) region = 'UK'
   
   const open: IntercomConversation[] = []
-  const snoozed: IntercomConversation[] = []
+  const allSnoozed: IntercomConversation[] = []
+  const waitingOnCustomerResolved: IntercomConversation[] = []
+  const waitingOnCustomerUnresolved: IntercomConversation[] = []
+  const waitingOnTSE: IntercomConversation[] = []
   const closed: IntercomConversation[] = []
   const taken: IntercomConversation[] = []
   
@@ -315,8 +310,22 @@ function getTSEConversations(
     if (state === 'open' && !isSnoozed) {
       open.push(conv)
     } else if (isSnoozed) {
-      if (!hasWaitingOnCustomerTag(conv)) {
-        snoozed.push(conv)
+      // All snoozed conversations
+      allSnoozed.push(conv)
+      
+      // Categorize by "Last Snooze Workflow Used" custom attribute
+      const workflow = getSnoozeWorkflow(conv)
+      
+      if (workflow === 'Waiting On Customer - Resolved') {
+        waitingOnCustomerResolved.push(conv)
+      } else if (workflow === 'Waiting On Customer - Unresolved') {
+        waitingOnCustomerUnresolved.push(conv)
+      } else if (workflow === 'Waiting On TSE - Deep Dive') {
+        waitingOnTSE.push(conv)
+      } else {
+        // If no workflow is set or it's an unknown value, treat as "Waiting On TSE"
+        // This handles untagged snoozed conversations
+        waitingOnTSE.push(conv)
       }
     } else if (state === 'closed' && isClosedToday(conv)) {
       closed.push(conv)
@@ -334,7 +343,10 @@ function getTSEConversations(
     avatar,
     region,
     open,
-    snoozed,
+    allSnoozed,
+    waitingOnCustomerResolved,
+    waitingOnCustomerUnresolved,
+    waitingOnTSE,
     closed,
     taken
   }
@@ -370,7 +382,19 @@ function TSEDetailsModal({
   tseData: TSEDetailData
   onClose: () => void 
 }) {
-  const { name, fullName, avatar, region, open, snoozed, closed, taken } = tseData
+  const { 
+    name, 
+    fullName, 
+    avatar, 
+    region, 
+    open, 
+    allSnoozed, 
+    waitingOnCustomerResolved, 
+    waitingOnCustomerUnresolved, 
+    waitingOnTSE, 
+    closed, 
+    taken 
+  } = tseData
   
   // Get author email from conversation
   const getAuthorEmail = (conv: IntercomConversation): string => {
@@ -397,11 +421,20 @@ function TSEDetailsModal({
           
           return (
             <div key={convId || idx} className="tse-modal-conversation-item">
-              <img 
-                src="https://res.cloudinary.com/doznvxtja/image/upload/v1767370490/Untitled_design_14_wkkhe3.svg"
-                alt="Intercom"
-                className="tse-modal-conv-icon"
-              />
+              <div style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '4px',
+                padding: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <img 
+                  src="https://res.cloudinary.com/doznvxtja/image/upload/v1767370490/Untitled_design_14_wkkhe3.svg"
+                  alt="Intercom"
+                  className="tse-modal-conv-icon"
+                />
+              </div>
               <div className="tse-modal-conv-content">
                 <div className="tse-modal-conv-header">
                   <a 
@@ -446,25 +479,43 @@ function TSEDetailsModal({
         {/* Stats Summary */}
         <div className="tse-modal-stats">
           <div className="tse-modal-stat">
-            <div className="tse-modal-stat-value" style={{ color: open.length > 5 ? '#ef4444' : open.length >= 3 ? '#eab308' : '#22c55e' }}>
+            <div className="tse-modal-stat-value" style={{ color: open.length > 5 ? 'var(--status-red)' : open.length >= 3 ? 'var(--status-yellow)' : 'var(--status-green)' }}>
               {open.length}
             </div>
             <div className="tse-modal-stat-label">Open</div>
           </div>
           <div className="tse-modal-stat">
-            <div className="tse-modal-stat-value" style={{ color: snoozed.length > 5 ? '#ef4444' : snoozed.length >= 3 ? '#eab308' : '#22c55e' }}>
-              {snoozed.length}
+            <div className="tse-modal-stat-value" style={{ color: allSnoozed.length > 5 ? '#ef4444' : allSnoozed.length >= 3 ? '#eab308' : '#22c55e' }}>
+              {allSnoozed.length}
             </div>
-            <div className="tse-modal-stat-label">Snoozed</div>
+            <div className="tse-modal-stat-label">All Snoozed</div>
           </div>
           <div className="tse-modal-stat">
-            <div className="tse-modal-stat-value" style={{ color: '#6b7280' }}>
+            <div className="tse-modal-stat-value" style={{ color: waitingOnCustomerResolved.length > 5 ? '#ef4444' : waitingOnCustomerResolved.length >= 3 ? '#eab308' : '#22c55e' }}>
+              {waitingOnCustomerResolved.length}
+            </div>
+            <div className="tse-modal-stat-label">Waiting On Customer - Resolved</div>
+          </div>
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: waitingOnCustomerUnresolved.length > 5 ? '#ef4444' : waitingOnCustomerUnresolved.length >= 3 ? '#eab308' : '#22c55e' }}>
+              {waitingOnCustomerUnresolved.length}
+            </div>
+            <div className="tse-modal-stat-label">Waiting On Customer - Unresolved</div>
+          </div>
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: waitingOnTSE.length > 5 ? '#ef4444' : waitingOnTSE.length >= 3 ? '#eab308' : '#22c55e' }}>
+              {waitingOnTSE.length}
+            </div>
+            <div className="tse-modal-stat-label">Waiting On TSE</div>
+          </div>
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: 'var(--status-gray)' }}>
               {closed.length}
             </div>
             <div className="tse-modal-stat-label">Closed Today</div>
           </div>
           <div className="tse-modal-stat">
-            <div className="tse-modal-stat-value" style={{ color: '#3b82f6' }}>
+            <div className="tse-modal-stat-value" style={{ color: 'var(--status-blue)' }}>
               {taken.length}
             </div>
             <div className="tse-modal-stat-label">Assigned Today</div>
@@ -482,16 +533,30 @@ function TSEDetailsModal({
           
           <div className="tse-modal-section">
             <h3 className="tse-modal-section-title">
-              Snoozed - Waiting On TSE <span className="tse-modal-section-count">({snoozed.length})</span>
+              All Snoozed <span className="tse-modal-section-count">({allSnoozed.length})</span>
             </h3>
-            {renderConversationList(snoozed, 'No conversations')}
+            {renderConversationList(allSnoozed, 'No conversations')}
           </div>
           
           <div className="tse-modal-section">
             <h3 className="tse-modal-section-title">
-              Total Snoozed <span className="tse-modal-section-count">({snoozed.length})</span>
+              Waiting On Customer - Resolved <span className="tse-modal-section-count">({waitingOnCustomerResolved.length})</span>
             </h3>
-            {renderConversationList(snoozed, 'No conversations')}
+            {renderConversationList(waitingOnCustomerResolved, 'No conversations')}
+          </div>
+          
+          <div className="tse-modal-section">
+            <h3 className="tse-modal-section-title">
+              Waiting On Customer - Unresolved <span className="tse-modal-section-count">({waitingOnCustomerUnresolved.length})</span>
+            </h3>
+            {renderConversationList(waitingOnCustomerUnresolved, 'No conversations')}
+          </div>
+          
+          <div className="tse-modal-section">
+            <h3 className="tse-modal-section-title">
+              Waiting On TSE - Deep Dive <span className="tse-modal-section-count">({waitingOnTSE.length})</span>
+            </h3>
+            {renderConversationList(waitingOnTSE, 'No conversations')}
           </div>
         </div>
       </div>
@@ -538,6 +603,9 @@ function generateMockConversationData(): TSEConversationData[] {
   })
 }
 
+type SortColumn = 'tse' | 'open' | 'snoozed' | 'closed' | 'assigned'
+type SortDirection = 'asc' | 'desc'
+
 export function TSEConversationTable({ 
   // Legacy props kept for backwards compatibility
   conversationData: _propsConversationData,
@@ -558,6 +626,8 @@ export function TSEConversationTable({
   const [_error, setError] = useState<string | null>(null)
   const [selectedTSE, setSelectedTSE] = useState<TSEDetailData | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   
   // Generate mock data as fallback
   const mockData = useMemo(() => generateMockConversationData(), [])
@@ -669,18 +739,57 @@ export function TSEConversationTable({
     return () => clearInterval(interval)
   }, [fetchConversationCounts, intercomData])
 
+  // Sort data based on current sort column and direction
+  const sortedData = useMemo(() => {
+    if (!sortColumn) {
+      // Default sort: by open + snoozed descending
+      return [...conversationData].sort((a, b) => {
+        const sumA = a.openCount + a.snoozedCount
+        const sumB = b.openCount + b.snoozedCount
+        return sumB - sumA
+      })
+    }
+
+    const sorted = [...conversationData].sort((a, b) => {
+      let comparison = 0
+
+      switch (sortColumn) {
+        case 'tse':
+          // Alphabetical sort for TSE names
+          comparison = a.tseName.localeCompare(b.tseName)
+          break
+        case 'open':
+          comparison = a.openCount - b.openCount
+          break
+        case 'snoozed':
+          comparison = a.snoozedCount - b.snoozedCount
+          break
+        case 'closed':
+          comparison = a.closedCount - b.closedCount
+          break
+        case 'assigned':
+          comparison = a.chatsTakenCount - b.chatsTakenCount
+          break
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+
+    return sorted
+  }, [conversationData, sortColumn, sortDirection])
+
   // Split data into two halves
   const [firstHalf, secondHalf] = useMemo(() => {
-    const midpoint = Math.ceil(conversationData.length / 2)
+    const midpoint = Math.ceil(sortedData.length / 2)
     return [
-      conversationData.slice(0, midpoint),
-      conversationData.slice(midpoint)
+      sortedData.slice(0, midpoint),
+      sortedData.slice(midpoint)
     ]
-  }, [conversationData])
+  }, [sortedData])
 
   // Rotate between halves every 10 seconds
   useEffect(() => {
-    if (conversationData.length === 0 || firstHalf.length === 0 || secondHalf.length === 0) return
+    if (sortedData.length === 0 || firstHalf.length === 0 || secondHalf.length === 0) return
 
     const interval = setInterval(() => {
       // Start fade out
@@ -698,7 +807,7 @@ export function TSEConversationTable({
     }, 10000) // 10 seconds between shifts
 
     return () => clearInterval(interval)
-  }, [conversationData.length, firstHalf.length, secondHalf.length])
+  }, [sortedData.length, firstHalf.length, secondHalf.length])
 
   // Get the currently displayed half
   const displayedData = currentHalf === 0 ? firstHalf : secondHalf
@@ -710,6 +819,18 @@ export function TSEConversationTable({
     return '#22c55e' // green
   }
   
+  // Handle column header click for sorting
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      // Toggle direction if clicking the same column
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new column and default to descending for numeric columns, ascending for TSE
+      setSortColumn(column)
+      setSortDirection(column === 'tse' ? 'asc' : 'desc')
+    }
+  }
+
   // Handle TSE name click
   const handleTSEClick = (row: TSEConversationData) => {
     if (!intercomConversations) return
@@ -730,26 +851,50 @@ export function TSEConversationTable({
     setSelectedTSE(null)
   }
 
+  // Render sort indicator
+  const renderSortIndicator = (column: SortColumn) => {
+    if (sortColumn !== column) {
+      return (
+        <span style={{ 
+          marginLeft: '4px', 
+          color: 'var(--text-muted)',
+          fontSize: '12px',
+          opacity: 0.5
+        }}>↕</span>
+      )
+    }
+    return (
+      <span style={{ 
+        marginLeft: '4px', 
+        color: 'var(--text-primary)',
+        fontSize: '12px',
+        fontWeight: 600
+      }}>
+        {sortDirection === 'asc' ? '↑' : '↓'}
+      </span>
+    )
+  }
+
   if (loading && conversationData.length === 0) {
     return (
       <div style={{
-        background: '#fff',
+        background: 'var(--bg-card)',
         borderRadius: '8px',
         padding: '16px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        boxShadow: 'var(--shadow-sm)',
         marginBottom: '16px'
       }}>
-        <div style={{ color: '#6b7280', fontSize: '14px' }}>Loading conversation data...</div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Loading conversation data...</div>
       </div>
     )
   }
 
   return (
     <div style={{
-      background: '#fff',
+      background: 'var(--bg-card)',
       borderRadius: '8px',
       padding: '16px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+      boxShadow: 'var(--shadow-sm)',
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
@@ -768,67 +913,142 @@ export function TSEConversationTable({
         }}>
         <thead>
           <tr style={{
-            borderBottom: '2px solid #e5e7eb',
+            borderBottom: '2px solid var(--border-color)',
             position: 'sticky',
             top: 0,
-            background: '#fff',
+            background: 'var(--bg-card)',
             zIndex: 1
           }}>
-            <th style={{
-              textAlign: 'left',
-              padding: '10px 8px',
-              fontWeight: 600,
-              color: '#374151',
-              fontSize: '15px',
-              whiteSpace: 'nowrap',
-              minWidth: '70px',
-              maxWidth: '80px'
-            }}>
-              TSE
+            <th 
+              onClick={() => handleSort('tse')}
+              style={{
+                textAlign: 'left',
+                padding: '10px 8px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                fontSize: '15px',
+                whiteSpace: 'nowrap',
+                minWidth: '70px',
+                maxWidth: '80px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                TSE
+                {renderSortIndicator('tse')}
+              </span>
             </th>
-            <th style={{
-              textAlign: 'right',
-              padding: '10px 8px',
-              fontWeight: 600,
-              color: '#374151',
-              fontSize: '15px',
-              whiteSpace: 'nowrap',
-              minWidth: '50px'
-            }}>
-              Open
+            <th 
+              onClick={() => handleSort('open')}
+              style={{
+                textAlign: 'right',
+                padding: '10px 8px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                fontSize: '15px',
+                whiteSpace: 'nowrap',
+                minWidth: '50px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
+                Open
+                {renderSortIndicator('open')}
+              </span>
             </th>
-            <th style={{
-              textAlign: 'right',
-              padding: '10px 8px',
-              fontWeight: 600,
-              color: '#374151',
-              fontSize: '15px',
-              whiteSpace: 'nowrap',
-              minWidth: '60px'
-            }}>
-              Snoozed
+            <th 
+              onClick={() => handleSort('snoozed')}
+              style={{
+                textAlign: 'right',
+                padding: '10px 8px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                fontSize: '15px',
+                whiteSpace: 'nowrap',
+                minWidth: '60px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
+                Snoozed
+                {renderSortIndicator('snoozed')}
+              </span>
             </th>
-            <th style={{
-              textAlign: 'right',
-              padding: '10px 8px',
-              fontWeight: 600,
-              color: '#374151',
-              fontSize: '15px',
-              whiteSpace: 'nowrap',
-              minWidth: '60px'
-            }}>
-              Closed
+            <th 
+              onClick={() => handleSort('closed')}
+              style={{
+                textAlign: 'right',
+                padding: '10px 8px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                fontSize: '15px',
+                whiteSpace: 'nowrap',
+                minWidth: '60px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
+                Closed
+                {renderSortIndicator('closed')}
+              </span>
             </th>
-            <th style={{
-              textAlign: 'right',
-              padding: '10px 8px',
-              fontWeight: 600,
-              color: '#374151',
-              fontSize: '15px',
-              whiteSpace: 'nowrap',
-              minWidth: '60px'
-            }}>
-              Assigned
+            <th 
+              onClick={() => handleSort('assigned')}
+              style={{
+                textAlign: 'right',
+                padding: '10px 8px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                fontSize: '15px',
+                whiteSpace: 'nowrap',
+                minWidth: '60px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
+                Assigned
+                {renderSortIndicator('assigned')}
+              </span>
             </th>
           </tr>
         </thead>
@@ -837,7 +1057,7 @@ export function TSEConversationTable({
             <tr
               key={row.tseName}
               style={{
-                borderBottom: index < displayedData.length - 1 ? '1px solid #f3f4f6' : 'none',
+                borderBottom: index < displayedData.length - 1 ? '1px solid var(--border-color-light)' : 'none',
                 opacity: isTransitioning ? 0 : 1,
                 transition: 'opacity 0.3s ease-in-out'
               }}
@@ -845,7 +1065,7 @@ export function TSEConversationTable({
               <td 
                 style={{
                   padding: '8px 8px',
-                  color: '#3b82f6',
+                  color: 'var(--status-blue)',
                   fontWeight: 500,
                   fontSize: '16px',
                   maxWidth: '80px',
@@ -863,7 +1083,7 @@ export function TSEConversationTable({
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = '#3b82f6'
+                  e.currentTarget.style.color = 'var(--status-blue)'
                   e.currentTarget.style.textDecoration = 'none'
                 }}
               >
@@ -890,7 +1110,7 @@ export function TSEConversationTable({
               <td style={{
                 padding: '8px 8px',
                 textAlign: 'right',
-                color: '#6b7280',
+                color: 'var(--status-gray)',
                 fontWeight: 600,
                 fontSize: '16px'
               }}>
@@ -899,7 +1119,7 @@ export function TSEConversationTable({
               <td style={{
                 padding: '8px 8px',
                 textAlign: 'right',
-                color: '#3b82f6',
+                color: 'var(--status-blue)',
                 fontWeight: 600,
                 fontSize: '16px'
               }}>
@@ -915,9 +1135,9 @@ export function TSEConversationTable({
         <div style={{
           marginTop: '8px',
           paddingTop: '8px',
-          borderTop: '1px solid #f3f4f6',
+          borderTop: '1px solid var(--border-color-light)',
           fontSize: '11px',
-          color: '#9ca3af',
+          color: 'var(--text-muted)',
           textAlign: 'right'
         }}>
           Updated {formatLastUpdated(lastUpdated)}
