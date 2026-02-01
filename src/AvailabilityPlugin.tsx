@@ -111,6 +111,7 @@ import { OOOProfilePictures } from './components/OOOProfilePictures'
 import { TSEConversationTable } from './components/TSEConversationTable'
 import { IncidentBanner } from './components/IncidentBanner'
 import { DarkModeToggle } from './components/DarkModeToggle'
+import { AudioToggle } from './components/AudioToggle'
 import { useAgentDataFromApi } from './hooks/useAgentData'
 import { useIntercomData } from './hooks/useIntercomData'
 import { useDailyMetrics } from './hooks/useDailyMetrics'
@@ -613,6 +614,7 @@ function getMockUnassignedConversations(nowSeconds: number): any[] {
 interface ResoQueueBeltProps {
   unassignedConvs: any[]
   chatsTodayCount: number
+  isAudioEnabled?: boolean
 }
 
 function isConversationUnassigned(conversation: any): boolean {
@@ -623,7 +625,7 @@ function isConversationUnassigned(conversation: any): boolean {
   return !hasAssigneeId && !hasAssigneeObject
 }
 
-function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps) {
+function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true }: ResoQueueBeltProps) {
   const [conveyorBeltCurrentTime, setConveyorBeltCurrentTime] = useState(() => Date.now() / 1000)
   const [showBreachedModal, setShowBreachedModal] = useState(false)
   const [selectedConversation, setSelectedConversation] = useState<any | null>(null)
@@ -638,7 +640,96 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
   const previousBreachedIdsRef = useRef<Set<string>>(new Set())
   const previousUnassignedIdsRef = useRef<Set<string>>(new Set())
   const conversationDataRef = useRef<Map<string, { progress: number, staggerOffset: number }>>(new Map())
+  const buzzerPlayedIdsRef = useRef<Set<string>>(new Set())
+  const audioContextRef = useRef<AudioContext | null>(null)
   const assignmentStatusEndpoint = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/assignment-status'
+
+  // Initialize audio context and resume on user interaction (required for browser autoplay policies)
+  useEffect(() => {
+    const initAudio = async () => {
+      try {
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+        }
+        
+        // Resume audio context if suspended (required after user interaction)
+        if (audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume()
+        }
+      } catch (error) {
+        console.warn('[ResoQueueBelt] Could not initialize audio context:', error)
+      }
+    }
+
+    // Resume audio context on any user interaction
+    const handleUserInteraction = () => {
+      initAudio()
+    }
+
+    // Listen for various user interaction events
+    window.addEventListener('click', handleUserInteraction, { once: true })
+    window.addEventListener('touchstart', handleUserInteraction, { once: true })
+    window.addEventListener('keydown', handleUserInteraction, { once: true })
+
+    return () => {
+      window.removeEventListener('click', handleUserInteraction)
+      window.removeEventListener('touchstart', handleUserInteraction)
+      window.removeEventListener('keydown', handleUserInteraction)
+    }
+  }, [])
+
+  // Play buzzer sound when a chat breaches the 10 minute mark
+  const playBuzzerSound = useCallback(async () => {
+    // Don't play sound if audio is disabled
+    if (!isAudioEnabled) {
+      return
+    }
+
+    try {
+      // Ensure audio context exists
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      }
+
+      const audioContext = audioContextRef.current
+
+      // Resume audio context if suspended (required for browser autoplay policies)
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume()
+      }
+
+      // If still suspended, try to resume again (sometimes needs multiple attempts)
+      if (audioContext.state === 'suspended') {
+        try {
+          await audioContext.resume()
+        } catch (e) {
+          console.warn('[ResoQueueBelt] Could not resume audio context:', e)
+          return
+        }
+      }
+
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      // Create a buzzer-like sound (low frequency square wave)
+      oscillator.type = 'square'
+      oscillator.frequency.setValueAtTime(200, audioContext.currentTime)
+      oscillator.frequency.setValueAtTime(150, audioContext.currentTime + 0.1)
+      oscillator.frequency.setValueAtTime(200, audioContext.currentTime + 0.2)
+      oscillator.frequency.setValueAtTime(150, audioContext.currentTime + 0.3)
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.4)
+    } catch (error) {
+      console.warn('[ResoQueueBelt] Could not play buzzer sound:', error)
+    }
+  }, [isAudioEnabled])
 
   // Update current time every second for conveyor belt animation
   useEffect(() => {
@@ -696,6 +787,8 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
     removedIdsRef.current.clear()
     checkedIdsRef.current.clear()
     checkingIdsRef.current.clear()
+    previousBreachedIdsRef.current.clear()
+    buzzerPlayedIdsRef.current.clear()
     lastResetRef.current = lastBreachResetTimestamp
   }, [lastBreachResetTimestamp])
 
@@ -797,6 +890,12 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
       if (elapsedSeconds >= 600) {
         // Check if this is a newly breached conversation
         if (!confirmedBreachedIdsRef.current.has(convId) && !previousBreachedIdsRef.current.has(convId)) {
+          // Play buzzer sound when breach occurs
+          if (!buzzerPlayedIdsRef.current.has(convId)) {
+            playBuzzerSound()
+            buzzerPlayedIdsRef.current.add(convId)
+          }
+          
           // Trigger explosion GIF immediately
           setExplodingIds(prev => new Set(prev).add(convId))
           // Remove from exploding after GIF plays (1 second)
@@ -824,7 +923,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
 
     const batchSize = 20
     checkConversationAssignments(eligibleIds.slice(0, batchSize))
-  }, [unassignedConvs, conveyorBeltCurrentTime, checkConversationAssignments])
+  }, [unassignedConvs, conveyorBeltCurrentTime, checkConversationAssignments, playBuzzerSound])
 
   // Automatically mark mock conversations as breached if they're over 10 minutes old
   useEffect(() => {
@@ -849,6 +948,12 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
       if (elapsedSeconds >= 600) {
         // Check if this is a newly breached conversation
         if (!confirmedBreachedIdsRef.current.has(convId) && !previousBreachedIdsRef.current.has(convId)) {
+          // Play buzzer sound when breach occurs
+          if (!buzzerPlayedIdsRef.current.has(convId)) {
+            playBuzzerSound()
+            buzzerPlayedIdsRef.current.add(convId)
+          }
+          
           // Trigger explosion GIF
           setExplodingIds(prev => new Set(prev).add(convId))
           // Remove from exploding after GIF plays (1 second)
@@ -869,7 +974,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
         confirmedBreachedIdsRef.current.delete(convId)
       }
     })
-  }, [unassignedConvs, conveyorBeltCurrentTime])
+  }, [unassignedConvs, conveyorBeltCurrentTime, playBuzzerSound])
 
   // Detect when conversations get assigned (disappear from queue before 10 min mark)
   // Triggers fly-away animation for successfully assigned conversations
@@ -1906,6 +2011,13 @@ export function AvailabilityPlugin() {
 
   const toggleDarkMode = () => {
     setIsDarkMode(prev => !prev)
+  }
+
+  // Audio enabled state management (always defaults to disabled, no persistence)
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false)
+
+  const toggleAudio = () => {
+    setIsAudioEnabled(prev => !prev)
   }
   
   // Debug: Check if client is available
@@ -3982,6 +4094,7 @@ export function AvailabilityPlugin() {
     return (
       <div className="app" style={{ padding: '20px' }}>
         <DarkModeToggle isDarkMode={isDarkMode} onToggle={toggleDarkMode} />
+        <AudioToggle isAudioEnabled={isAudioEnabled} onToggle={toggleAudio} />
         <div style={{ 
           background: 'var(--bg-card)', 
           padding: '24px', 
@@ -4012,6 +4125,7 @@ export function AvailabilityPlugin() {
     <ErrorBoundary>
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
       <DarkModeToggle isDarkMode={isDarkMode} onToggle={toggleDarkMode} />
+      <AudioToggle isAudioEnabled={isAudioEnabled} onToggle={toggleAudio} />
       <IncidentBanner
         incidentsData={incidentsData}
         incidentsColumns={incidentsColumns}
@@ -4079,7 +4193,7 @@ export function AvailabilityPlugin() {
                 <span style={{ fontWeight: 600 }}>{formatLastUpdated(lastUpdated)}</span>
               </div>
             </div>
-            <ResoQueueBelt unassignedConvs={unassignedConvs} chatsTodayCount={totalChatsTakenToday} />
+            <ResoQueueBelt unassignedConvs={unassignedConvs} chatsTodayCount={totalChatsTakenToday} isAudioEnabled={isAudioEnabled} />
 
             <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
               <div style={{ flex: 1, width: '100%', minWidth: 0 }}>
