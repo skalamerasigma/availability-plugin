@@ -1335,7 +1335,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount }: ResoQueueBeltProps)
                         transform: 'translate(-50%, -50%)',
                         fontSize: '12px',
                         fontWeight: 700,
-                        color: 'var(--text-primary)',
+                        color: '#000000',
                         textAlign: 'center',
                         lineHeight: '1.2',
                         whiteSpace: 'nowrap',
