@@ -7,6 +7,10 @@ import {
 } from '@sigmacomputing/plugin'
 
 import { Timeline } from './components/Timeline'
+import { getQhmApiBaseUrl, isDebugEnabled } from './config'
+
+const QHM_API_BASE_URL = getQhmApiBaseUrl()
+const LOG = isDebugEnabled()
 
 // =================================================================
 // ERROR BOUNDARY - Prevents white screen crashes
@@ -116,6 +120,7 @@ import { useAgentDataFromApi } from './hooks/useAgentData'
 import { useIntercomData } from './hooks/useIntercomData'
 import { useDailyMetrics } from './hooks/useDailyMetrics'
 import { TEAM_MEMBERS } from './data/teamMembers'
+import { getTSECapacity } from './data/tseCapacityExceptions'
 import type { City, AgentData, AgentStatus } from './types'
 
 /**
@@ -585,30 +590,35 @@ function getMockUnassignedConversations(nowSeconds: number): any[] {
       { id: 'mock-1003', created_at: nowSeconds - 240, waiting_since: nowSeconds - 240, admin_assignee_id: null, admin_assignee: null },  // 4 min
     ]
   } else {
-    // SCENARIO 2: 9 bubbles scattered across the conveyor belt (no fly-away)
-    // Positions are determined by elapsed time relative to 10 min threshold
-    // 0 sec = left edge (0%), 600 sec (10 min) = right edge (100%)
+    // SCENARIO 2: Start with mix of bubbles - some fresh, some close to breaching
+    // Then add 5 more progressively
     return [
-      // Bubble at ~15% (1.5 min = 90 sec)
+      // Fresh bubble at ~15% (1.5 min = 90 sec)
       { id: 'mock-2001', created_at: nowSeconds - 90, waiting_since: nowSeconds - 90, admin_assignee_id: null, admin_assignee: null },
       // Bubble at ~25% (2.5 min = 150 sec)
       { id: 'mock-2002', created_at: nowSeconds - 150, waiting_since: nowSeconds - 150, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~35% (3.5 min = 210 sec)
-      { id: 'mock-2003', created_at: nowSeconds - 210, waiting_since: nowSeconds - 210, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~45% (4.5 min = 270 sec)
-      { id: 'mock-2004', created_at: nowSeconds - 270, waiting_since: nowSeconds - 270, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~55% (5.5 min = 330 sec)
-      { id: 'mock-2005', created_at: nowSeconds - 330, waiting_since: nowSeconds - 330, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~62% (6.2 min = 372 sec)
-      { id: 'mock-2006', created_at: nowSeconds - 372, waiting_since: nowSeconds - 372, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~70% (7 min = 420 sec)
-      { id: 'mock-2007', created_at: nowSeconds - 420, waiting_since: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~78% (7.8 min = 468 sec)
-      { id: 'mock-2008', created_at: nowSeconds - 468, waiting_since: nowSeconds - 468, admin_assignee_id: null, admin_assignee: null },
-      // Bubble at ~98% (9.83 min = 590 sec) - 10 seconds away from breaching
-      { id: 'mock-2009', created_at: nowSeconds - 590, waiting_since: nowSeconds - 590, admin_assignee_id: null, admin_assignee: null },
+      // Bubble close to breaching at ~85% (8.5 min = 510 sec) - 90 seconds from breach
+      { id: 'mock-2010', created_at: nowSeconds - 510, waiting_since: nowSeconds - 510, admin_assignee_id: null, admin_assignee: null },
+      // Bubble very close to breaching at ~95% (9.5 min = 570 sec) - 30 seconds from breach
+      { id: 'mock-2011', created_at: nowSeconds - 570, waiting_since: nowSeconds - 570, admin_assignee_id: null, admin_assignee: null },
     ]
   }
+}
+
+// Generate the 5 bubbles that will be added progressively (for SCENARIO 2)
+function getPendingMockBubbles(nowSeconds: number): any[] {
+  return [
+    // Bubble at ~55% (5.5 min = 330 sec)
+    { id: 'mock-2005', created_at: nowSeconds - 330, waiting_since: nowSeconds - 330, admin_assignee_id: null, admin_assignee: null },
+    // Bubble at ~62% (6.2 min = 372 sec)
+    { id: 'mock-2006', created_at: nowSeconds - 372, waiting_since: nowSeconds - 372, admin_assignee_id: null, admin_assignee: null },
+    // Bubble at ~70% (7 min = 420 sec)
+    { id: 'mock-2007', created_at: nowSeconds - 420, waiting_since: nowSeconds - 420, admin_assignee_id: null, admin_assignee: null },
+    // Bubble at ~78% (7.8 min = 468 sec)
+    { id: 'mock-2008', created_at: nowSeconds - 468, waiting_since: nowSeconds - 468, admin_assignee_id: null, admin_assignee: null },
+    // Bubble at ~98% (9.83 min = 590 sec) - 10 seconds away from breaching
+    { id: 'mock-2009', created_at: nowSeconds - 590, waiting_since: nowSeconds - 590, admin_assignee_id: null, admin_assignee: null },
+  ]
 }
 
 interface ResoQueueBeltProps {
@@ -641,8 +651,9 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
   const previousUnassignedIdsRef = useRef<Set<string>>(new Set())
   const conversationDataRef = useRef<Map<string, { progress: number, staggerOffset: number }>>(new Map())
   const buzzerPlayedIdsRef = useRef<Set<string>>(new Set())
+  const newBubbleSoundPlayedIdsRef = useRef<Set<string>>(new Set())
   const audioContextRef = useRef<AudioContext | null>(null)
-  const assignmentStatusEndpoint = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/assignment-status'
+  const assignmentStatusEndpoint = `${QHM_API_BASE_URL}/api/intercom/conversations/assignment-status`
 
   // Initialize audio context and resume on user interaction (required for browser autoplay policies)
   useEffect(() => {
@@ -731,6 +742,58 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     }
   }, [isAudioEnabled])
 
+  // Play sound when a new chat bubble is added to the conveyer belt
+  const playNewBubbleSound = useCallback(async () => {
+    // Don't play sound if audio is disabled
+    if (!isAudioEnabled) {
+      return
+    }
+
+    try {
+      // Ensure audio context exists
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      }
+
+      const audioContext = audioContextRef.current
+
+      // Resume audio context if suspended (required for browser autoplay policies)
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume()
+      }
+
+      // If still suspended, try to resume again (sometimes needs multiple attempts)
+      if (audioContext.state === 'suspended') {
+        try {
+          await audioContext.resume()
+        } catch (e) {
+          console.warn('[ResoQueueBelt] Could not resume audio context:', e)
+          return
+        }
+      }
+
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      // Create a pleasant notification sound (higher frequency, shorter duration)
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.05)
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1)
+      
+      gainNode.gain.setValueAtTime(0.2, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.15)
+    } catch (error) {
+      console.warn('[ResoQueueBelt] Could not play new bubble sound:', error)
+    }
+  }, [isAudioEnabled])
+
   // Update current time every second for conveyor belt animation
   useEffect(() => {
     const timer = setInterval(() => {
@@ -789,6 +852,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     checkingIdsRef.current.clear()
     previousBreachedIdsRef.current.clear()
     buzzerPlayedIdsRef.current.clear()
+    newBubbleSoundPlayedIdsRef.current.clear()
     lastResetRef.current = lastBreachResetTimestamp
   }, [lastBreachResetTimestamp])
 
@@ -812,6 +876,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     try {
       const response = await fetch(assignmentStatusEndpoint, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
@@ -1059,9 +1124,25 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
       }
     })
     
+    // Check for new conversations that weren't in the previous list (new bubbles added)
+    // Skip on initial load (when previousUnassignedIdsRef is empty)
+    if (previousUnassignedIdsRef.current.size > 0) {
+      currentIds.forEach(convId => {
+        // If this ID wasn't in the previous list, it's a new bubble
+        if (!previousUnassignedIdsRef.current.has(convId)) {
+          // Skip if we've already played the sound for this ID
+          if (!newBubbleSoundPlayedIdsRef.current.has(convId)) {
+            // Play sound for new bubble
+            playNewBubbleSound()
+            newBubbleSoundPlayedIdsRef.current.add(convId)
+          }
+        }
+      })
+    }
+    
     // Update previous IDs for next comparison
     previousUnassignedIdsRef.current = currentIds
-  }, [unassignedConvs, conveyorBeltCurrentTime, flyingAwayIds, explodingIds])
+  }, [unassignedConvs, conveyorBeltCurrentTime, flyingAwayIds, explodingIds, playNewBubbleSound])
 
   return (
     <>
@@ -1119,82 +1200,33 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
 
           // Count TOTAL unassigned conversations (includes both belt and breached)
           // This shows all chats waiting to be picked up, regardless of wait time
-          const totalUnassignedCount = unassignedConvs.filter((conv) => {
-            const convId = conv.id || conv.conversation_id
-            const createdTimestamp = conv.createdTimestamp
-            if (!createdTimestamp) return false
-            // Only exclude conversations that have been removed (assigned)
-            if (convId && removedIdsRef.current.has(convId)) return false
-            return true
-          }).length
+          // Note: totalUnassignedCount calculation removed as it was unused
+
+          // Color code based on average wait time
+          // Green: < 5 minutes, Yellow: 5-10 minutes, Red: > 10 minutes
+          const getWaitTimeColor = (seconds: number): string => {
+            const minutes = seconds / 60
+            if (minutes < 5) {
+              return '#4cec8c' // Green
+            } else if (minutes <= 10) {
+              return '#ffc107' // Yellow
+            } else {
+              return '#fd8789' // Red
+            }
+          }
 
           return (
-            <div style={{
+            <h3 style={{
+              margin: 0,
+              fontSize: '18px',
+              fontWeight: 600,
+              color: getWaitTimeColor(averageWaitTimeSeconds),
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '40px'
+              marginBottom: '16px'
             }}>
-              <h3 style={{
-                margin: 0,
-                fontSize: '18px',
-                fontWeight: 600,
-                color: 'var(--text-primary)',
-                display: 'flex',
-                alignItems: 'center'
-              }}>
-                Reso Queue - Waiting
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginLeft: '16px',
-                  padding: '8px 16px',
-                  borderRadius: '999px',
-                  backgroundColor: totalUnassignedCount > 10 
-                    ? 'rgba(253, 135, 137, 0.15)'
-                    : totalUnassignedCount > 5
-                    ? 'rgba(255, 193, 7, 0.2)'
-                    : 'rgba(76, 236, 140, 0.2)',
-                  color: totalUnassignedCount > 10 
-                    ? '#fd8789'
-                    : totalUnassignedCount > 5
-                    ? '#ffc107'
-                    : '#4cec8c',
-                  fontSize: '36px',
-                  fontWeight: 700,
-                  lineHeight: 1
-                }}>
-                  {totalUnassignedCount}
-                </span>
-                {/* Average Wait Time */}
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginLeft: '16px',
-                  padding: '8px 16px',
-                  borderRadius: '999px',
-                  backgroundColor: averageWaitTimeSeconds >= 360 
-                    ? 'rgba(253, 135, 137, 0.15)'  // Red if >= 6 minutes
-                    : averageWaitTimeSeconds >= 240
-                    ? 'rgba(255, 193, 7, 0.2)'      // Yellow if 4-5 minutes
-                    : 'rgba(76, 236, 140, 0.2)',    // Green if 0-3 minutes
-                  color: averageWaitTimeSeconds >= 360 
-                    ? '#fd8789'  // Red if >= 6 minutes
-                    : averageWaitTimeSeconds >= 240
-                    ? '#ffc107'  // Yellow if 4-5 minutes
-                    : '#4cec8c', // Green if 0-3 minutes
-                  fontSize: '18px',
-                  fontWeight: 600,
-                  lineHeight: 1
-                }}
-                title={`Average wait time: ${formatWaitTime(averageWaitTimeSeconds)}`}
-                >
-                  Avg: {formatWaitTime(averageWaitTimeSeconds)}
-                </span>
-              </h3>
-            </div>
+              Avg: {formatWaitTime(averageWaitTimeSeconds)}
+            </h3>
           )
         })()}
         
@@ -2211,6 +2243,10 @@ export function AvailabilityPlugin() {
   // Store mock data in a ref so it doesn't regenerate on every render
   const mockDataRef = useRef<any[] | null>(null)
   
+  // Track pending bubbles that will be added progressively (SCENARIO 2)
+  const pendingMockBubblesRef = useRef<any[] | null>(null)
+  const [addedMockBubbleIds, setAddedMockBubbleIds] = useState<Set<string>>(new Set())
+  
   // Track "assigned" mock conversations for local testing of fly-away animation
   const [assignedMockIds, setAssignedMockIds] = useState<Set<string>>(new Set())
   
@@ -2221,6 +2257,65 @@ export function AvailabilityPlugin() {
   useEffect(() => {
     assignedMockIdsRef.current = assignedMockIds
   }, [assignedMockIds])
+  
+  // Progressively add pending mock bubbles (SCENARIO 2 only, localhost only)
+  useEffect(() => {
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+    )
+    
+    if (!isLocalhost || MOCK_SCENARIO !== 2) return
+    
+    // Initialize pending bubbles if not already done
+    if (!pendingMockBubblesRef.current) {
+      const nowSeconds = Date.now() / 1000
+      pendingMockBubblesRef.current = getPendingMockBubbles(nowSeconds)
+    }
+    
+    const pendingBubbles = pendingMockBubblesRef.current
+    if (pendingBubbles.length === 0) return
+    
+    // Filter out bubbles that have already been added
+    const bubblesToAdd = pendingBubbles.filter(bubble => 
+      !addedMockBubbleIds.has(bubble.id)
+    )
+    
+    if (bubblesToAdd.length === 0) return
+    
+    // Add bubbles progressively with random delays between 5-10 seconds
+    const timeouts: number[] = []
+    let cumulativeDelay = 0
+    
+    bubblesToAdd.forEach((bubble) => {
+      // Random delay between 5-10 seconds for each bubble
+      const delay = cumulativeDelay + (5000 + Math.random() * 5000) // 5-10 seconds
+      cumulativeDelay = delay
+      
+      const timeout = setTimeout(() => {
+        const nowSeconds = Date.now() / 1000
+        // Update the bubble's timestamps to "now" so it starts fresh at the beginning of the belt
+        if (pendingMockBubblesRef.current) {
+          const bubbleIndex = pendingMockBubblesRef.current.findIndex(b => b.id === bubble.id)
+          if (bubbleIndex !== -1) {
+            pendingMockBubblesRef.current[bubbleIndex] = {
+              ...bubble,
+              created_at: nowSeconds,
+              waiting_since: nowSeconds
+            }
+          }
+        }
+        console.log(`[Mock] ➕ Adding new bubble: ${bubble.id} (${Math.round(delay / 1000)}s after load)`)
+        setAddedMockBubbleIds(prev => new Set(prev).add(bubble.id))
+      }, delay)
+      
+      timeouts.push(timeout)
+    })
+    
+    return () => {
+      timeouts.forEach(timeout => clearTimeout(timeout))
+    }
+  }, [addedMockBubbleIds])
   
   // Periodically "assign" mock conversations to test fly-away animation (localhost only)
   useEffect(() => {
@@ -2250,8 +2345,15 @@ export function AvailabilityPlugin() {
     const assignRandomMock = () => {
       if (!mockDataRef.current) return
       
+      // Combine initial bubbles with progressively added bubbles (SCENARIO 2)
+      const initialBubbles = mockDataRef.current
+      const addedBubbles = pendingMockBubblesRef.current
+        ? pendingMockBubblesRef.current.filter(bubble => addedMockBubbleIds.has(bubble.id))
+        : []
+      const allMockBubbles = [...initialBubbles, ...addedBubbles]
+      
       // Find mock conversations that haven't been assigned yet and aren't breached
-      const availableMocks = mockDataRef.current.filter(conv => {
+      const availableMocks = allMockBubbles.filter(conv => {
         const convId = conv.id
         if (!convId) return false
         if (assignedMockIdsRef.current.has(convId)) return false
@@ -2342,24 +2444,28 @@ export function AvailabilityPlugin() {
     error: dailyMetricsError,
   })
   
-  // Debug: Log when Intercom data changes
-  console.log('🔴 [Intercom Hook] Data received:', {
-    conversationsCount: intercomConversations.length,
-    teamMembersCount: intercomTeamMembers.length,
-    loading: intercomLoading,
-    error: intercomError,
-    hasData: intercomConversations.length > 0
-  })
-  
-  // Log Intercom data status
-  useEffect(() => {
-    console.log('[AvailabilityPlugin] Intercom data status:', {
+  // Debug: Log when Intercom data changes (avoid logging raw payloads / emails)
+  if (LOG) {
+    console.log('🔴 [Intercom Hook] Data received:', {
       conversationsCount: intercomConversations.length,
       teamMembersCount: intercomTeamMembers.length,
       loading: intercomLoading,
       error: intercomError,
-      lastUpdated: intercomLastUpdated?.toISOString(),
+      hasData: intercomConversations.length > 0,
     })
+  }
+  
+  // Log Intercom data status
+  useEffect(() => {
+    if (LOG) {
+      console.log('[AvailabilityPlugin] Intercom data status:', {
+        conversationsCount: intercomConversations.length,
+        teamMembersCount: intercomTeamMembers.length,
+        loading: intercomLoading,
+        error: intercomError,
+        lastUpdated: intercomLastUpdated?.toISOString(),
+      })
+    }
     
     if (intercomConversations.length > 0) {
       const stateCounts = intercomConversations.reduce((acc, conv) => {
@@ -2367,13 +2473,17 @@ export function AvailabilityPlugin() {
         acc[state] = (acc[state] || 0) + 1
         return acc
       }, {} as Record<string, number>)
-      console.log('[AvailabilityPlugin] Conversation states:', stateCounts)
+      if (LOG) console.log('[AvailabilityPlugin] Conversation states:', stateCounts)
     }
     
     if (intercomTeamMembers.length > 0) {
-      console.log('[AvailabilityPlugin] Team members sample:', 
-        intercomTeamMembers.slice(0, 3).map(m => ({ id: m.id, name: m.name, email: m.email }))
-      )
+      // Don't log emails; they are PII.
+      if (LOG) {
+        console.log(
+          '[AvailabilityPlugin] Team members sample:',
+          intercomTeamMembers.slice(0, 3).map(m => ({ id: m.id, name: m.name, hasEmail: Boolean(m.email) }))
+        )
+      }
     }
   }, [intercomConversations, intercomTeamMembers, intercomLoading, intercomError, intercomLastUpdated])
   
@@ -2491,6 +2601,84 @@ export function AvailabilityPlugin() {
     
     console.log('[AvailabilityPlugin] Total chats taken today (from table data):', totalCount)
     return totalCount
+  }, [intercomConversations, intercomTeamMembers])
+  
+  // =================================================================
+  // TSE CONVERSATION DATA (for capacity calculation)
+  // Calculates openCount per TSE from Intercom data
+  // =================================================================
+  const tseConversationDataForCapacity = useMemo(() => {
+    if (!intercomConversations.length || !intercomTeamMembers.length) {
+      return []
+    }
+    
+    
+    // Helper to check if TSE is excluded
+    const isExcludedTSE = (name: string): boolean => {
+      if (EXCLUDED_TSE_NAMES.includes(name)) return true
+      const firstName = name.split(' ')[0]
+      return EXCLUDED_TSE_NAMES.includes(firstName)
+    }
+    
+    // Helper to get first name
+    const getFirstName = (name: string): string => {
+      return name.split(' ')[0]
+    }
+    
+    // Group conversations by admin_assignee_id
+    const tseMap = new Map<string, { 
+      name: string
+      id: string
+      open: number
+    }>()
+    
+    intercomConversations.forEach(conv => {
+      const assigneeId = conv.admin_assignee_id || 
+        (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
+      
+      if (!assigneeId) return
+      
+      const idStr = String(assigneeId)
+      
+      // Initialize TSE entry if not exists
+      if (!tseMap.has(idStr)) {
+        const teamMember = intercomTeamMembers.find(m => String(m.id) === idStr)
+        const name = teamMember?.name || `TSE ${idStr}`
+        
+        // Skip excluded TSEs
+        if (isExcludedTSE(name)) return
+        
+        tseMap.set(idStr, { 
+          name,
+          id: idStr,
+          open: 0
+        })
+      }
+      
+      const counts = tseMap.get(idStr)
+      if (!counts) return // Skip if TSE was excluded
+      
+      const state = (conv.state || 'open').toLowerCase()
+      const isSnoozed = state === 'snoozed' || conv.snoozed_until
+      
+      // Only count open (non-snoozed) conversations for capacity
+      if (state === 'open' && !isSnoozed) {
+        counts.open++
+      }
+    })
+    
+    // Convert to array format matching ChatCapacityIndicator interface
+    return Array.from(tseMap.entries())
+      .filter(([_, item]) => !isExcludedTSE(item.name))
+      .map(([id, item]) => ({
+        tseName: getFirstName(item.name),
+        fullName: item.name,
+        tseId: id,
+        openCount: item.open,
+        snoozedCount: 0, // Not needed for capacity calculation
+        closedCount: 0, // Not needed for capacity calculation
+        chatsTakenCount: 0 // Not needed for capacity calculation
+      }))
   }, [intercomConversations, intercomTeamMembers])
   
   // =================================================================
@@ -2631,9 +2819,13 @@ export function AvailabilityPlugin() {
         console.log('[AvailabilityPlugin] Fetching historical metrics...')
         
         // Fetch all recent metrics and use the most recent one
-        const response = await fetch(
-          `https://queue-health-monitor.vercel.app/api/response-time-metrics/get?all=true`
-        )
+        const response = await fetch(`${QHM_API_BASE_URL}/api/response-time-metrics/get?all=true`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+          },
+        })
         
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`)
@@ -2749,8 +2941,14 @@ export function AvailabilityPlugin() {
   // Fetch unassigned conversations
   const fetchUnassignedConversations = useCallback(async () => {
     try {
-      const apiBaseUrl = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/unassigned-only'
-      const res = await fetch(apiBaseUrl)
+      const apiUrl = `${QHM_API_BASE_URL}/api/intercom/conversations/unassigned-only`
+      const res = await fetch(apiUrl, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      })
       if (!res.ok) {
         console.warn('Timeline Belt Plugin: Failed to fetch unassigned conversations:', res.status)
         return
@@ -2801,8 +2999,21 @@ export function AvailabilityPlugin() {
       if (!mockDataRef.current) {
         mockDataRef.current = getMockUnassignedConversations(Date.now() / 1000)
       }
-      // Filter out "assigned" mock conversations to trigger fly-away animation
-      rawUnassignedConversations = mockDataRef.current.filter(conv => 
+      
+      // Initialize pending bubbles if not already done (SCENARIO 2)
+      if (MOCK_SCENARIO === 2 && !pendingMockBubblesRef.current) {
+        const nowSeconds = Date.now() / 1000
+        pendingMockBubblesRef.current = getPendingMockBubbles(nowSeconds)
+      }
+      
+      // Combine initial bubbles with progressively added bubbles
+      const initialBubbles = mockDataRef.current
+      const addedBubbles = MOCK_SCENARIO === 2 && pendingMockBubblesRef.current
+        ? pendingMockBubblesRef.current.filter(bubble => addedMockBubbleIds.has(bubble.id))
+        : []
+      
+      // Combine all bubbles and filter out "assigned" ones to trigger fly-away animation
+      rawUnassignedConversations = [...initialBubbles, ...addedBubbles].filter(conv => 
         !assignedMockIds.has(conv.id)
       )
     } else if (unassignedConversationsData?.length) {
@@ -2832,7 +3043,7 @@ export function AvailabilityPlugin() {
         waitingSinceTimestamp // Use for wait time calculations
       }
     })
-  }, [unassignedConversationsData, assignedMockIds])
+  }, [unassignedConversationsData, assignedMockIds, addedMockBubbleIds])
   
   // Subscribe directly to element data using client API
   useEffect(() => {
@@ -3779,24 +3990,7 @@ export function AvailabilityPlugin() {
     return grouped
   }, [agents, cities])
 
-  // =================================================================
-  // ZOOM CALL COUNT (from agentsByCity data)
-  // Counts agents with ringColor === 'zoom'
-  // =================================================================
-  const zoomCallCount = useMemo(() => {
-    let count = 0
-    agentsByCity.forEach((cityAgents) => {
-      cityAgents.forEach(agent => {
-        if (agent.ringColor === 'zoom') {
-          count++
-        }
-      })
-    })
-    // In local dev, show minimum of 2 for testing
-    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    return isLocalDev ? Math.max(count, 2) : count
-  }, [agentsByCity])
-
+  
   // Extract OOO agents when schedule data is available
   useEffect(() => {
     const scheduleTSECol = config.scheduleTSE as string
@@ -4039,6 +4233,183 @@ export function AvailabilityPlugin() {
     tseCountsMinuteTick, // Include minuteTick to trigger recalculation every minute
   ])
 
+  // =================================================================
+  // CAPACITY METRICS (TSEs @ Capacity and Available Capacity)
+  // =================================================================
+  const capacityMetrics = useMemo(() => {
+    // Create a map of TSE names (lowercase) to their open chat counts
+    const tseOpenChatMap = new Map<string, number>()
+    tseConversationDataForCapacity.forEach(tse => {
+      const nameLower = tse.fullName.trim().toLowerCase()
+      const firstName = nameLower.split(' ')[0]
+      tseOpenChatMap.set(nameLower, tse.openCount)
+      if (firstName !== nameLower) {
+        tseOpenChatMap.set(firstName, tse.openCount)
+      }
+    })
+
+    // Get list of active TSE names from schedule/status
+    const activeTSENames = new Set<string>()
+    const effectiveScheduleData = Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData
+    const scheduleTSECol = config.scheduleTSE as string
+    const scheduleOOOCol = config.scheduleOOO as string
+    
+    if (effectiveScheduleData && scheduleTSECol) {
+      const tseData = effectiveScheduleData[scheduleTSECol] as string[] | undefined
+      const oooData = scheduleOOOCol && effectiveScheduleData[scheduleOOOCol] 
+        ? effectiveScheduleData[scheduleOOOCol] as string[] | undefined 
+        : undefined
+      
+      // Build set of OOO TSEs
+      const oooSet = new Set<string>()
+      if (oooData) {
+        oooData.forEach((value, idx) => {
+          if (value && String(value).toLowerCase() === 'yes') {
+            const tseName = tseData?.[idx]?.trim().toLowerCase()
+            if (tseName) {
+              oooSet.add(tseName)
+              const firstName = tseName.split(' ')[0]
+              if (firstName !== tseName) {
+                oooSet.add(firstName)
+              }
+            }
+          }
+        })
+      }
+      
+      // Build agent status map
+      const agentStatusMap = new Map<string, 'away' | 'call' | 'lunch' | 'chat' | 'closing'>()
+      agentsByCity.forEach((agents) => {
+        agents.forEach(agent => {
+          if (agent.name) {
+            const cleanName = agent.name.trim().toLowerCase()
+            agentStatusMap.set(cleanName, agent.status)
+            const firstName = cleanName.split(' ')[0]
+            if (firstName !== cleanName) {
+              agentStatusMap.set(firstName, agent.status)
+            }
+          }
+        })
+      })
+      
+      // Get active city timezones
+      const nowUTC = (
+        currentTime.getUTCHours() +
+        currentTime.getUTCMinutes() / 60 +
+        currentTime.getUTCSeconds() / 3600
+      )
+      const activeCities = cities.filter(c => {
+        if (c.endHour > 24) {
+          const nextDayEndHour = c.endHour - 24
+          return nowUTC >= c.startHour || nowUTC < nextDayEndHour + 1
+        } else {
+          return nowUTC >= c.startHour && nowUTC < c.endHour + 1
+        }
+      })
+      const activeTimezones = new Set(activeCities.map(c => c.timezone))
+      
+      // Collect active TSE names (use full names to avoid duplicates)
+      if (tseData) {
+        tseData.forEach((name) => {
+          if (!name || !name.trim()) return
+          
+          const cleanName = name.trim()
+          const cleanNameLower = cleanName.toLowerCase()
+          const firstName = cleanNameLower.split(' ')[0]
+          
+          // Skip if OOO
+          if (oooSet.has(cleanNameLower) || oooSet.has(firstName)) {
+            return
+          }
+          
+          // Find team member to get timezone
+          const teamMember = TEAM_MEMBERS.find(m => 
+            m.name.toLowerCase() === cleanNameLower ||
+            m.name.toLowerCase() === firstName ||
+            cleanNameLower.startsWith(m.name.toLowerCase() + ' ') ||
+            m.name.toLowerCase().startsWith(firstName + ' ')
+          )
+          
+          // Only count if scheduled in an active city and not away
+          if (teamMember && activeTimezones.has(teamMember.timezone)) {
+            const agentStatus = agentStatusMap.get(cleanNameLower) || 
+                               agentStatusMap.get(firstName) ||
+                               null
+            
+            if (agentStatus !== 'away' && agentStatus !== null) {
+              // Use full name as primary key, but also store first name for matching
+              activeTSENames.add(cleanNameLower)
+            }
+          }
+        })
+      }
+    }
+
+    // Calculate capacity metrics
+    // Match active TSE names to their open chat counts
+    const processedTSEs = new Set<string>()
+    let tseAtCapacityCount = 0
+    let availableCapacity = 0
+    
+    activeTSENames.forEach(tseName => {
+      // Find matching TSE in conversation data (try full name first, then first name)
+      let openCount = tseOpenChatMap.get(tseName) || 0
+      let matchedTseName = tseName
+      
+      // If not found by full name, try first name
+      if (openCount === 0) {
+        const firstName = tseName.split(' ')[0]
+        openCount = tseOpenChatMap.get(firstName) || 0
+        if (openCount > 0) {
+          // Find the full name from the map
+          for (const [key, count] of tseOpenChatMap.entries()) {
+            if (key.toLowerCase().startsWith(firstName.toLowerCase() + ' ') || 
+                (key.toLowerCase() === firstName.toLowerCase() && count === openCount)) {
+              matchedTseName = key
+              break
+            }
+          }
+        }
+      }
+      
+      // Skip if we've already processed this TSE (check by first name to avoid duplicates)
+      const firstName = tseName.split(' ')[0]
+      if (processedTSEs.has(firstName)) {
+        return
+      }
+      processedTSEs.add(firstName)
+      
+      // Get this TSE's capacity limit (from exceptions or default)
+      // Try both the matched name and the original schedule name
+      const tseCapacityLimit = getTSECapacity(matchedTseName) || getTSECapacity(tseName)
+      
+      // Count TSEs at capacity (at or above their limit)
+      if (openCount >= tseCapacityLimit) {
+        tseAtCapacityCount++
+      }
+      
+      // Calculate available capacity: sum of (capacityLimit - openCount) for all active TSEs
+      // This can be negative if some TSEs are over capacity
+      const capacityDiff = tseCapacityLimit - openCount
+      availableCapacity += capacityDiff
+    })
+
+    return {
+      tseOpenChatMap,
+      tseAtCapacityCount,
+      availableCapacity
+    }
+  }, [
+    tseConversationDataForCapacity,
+    scheduleData,
+    directScheduleData,
+    config.scheduleTSE,
+    config.scheduleOOO,
+    agentsByCity,
+    cities,
+    currentTime
+  ])
+
   // Random status updates every 10 seconds (demo mode only)
   useEffect(() => {
     if (apiUrl || sigmaData) return // Skip if using real data
@@ -4137,7 +4508,6 @@ export function AvailabilityPlugin() {
         closedCount={dailyMetrics?.closedToday ?? totalClosedToday}
         chatsTrending={chatsTrending}
         previousClosed={historicalMetrics.yesterdayClosed}
-        zoomCallCount={zoomCallCount}
         medianResponseTime={medianResponseTime}
         teamMembers={intercomTeamMembers.length > 0 ? intercomTeamMembers : TEAM_MEMBERS.map(m => ({
           id: m.id,
@@ -4147,6 +4517,8 @@ export function AvailabilityPlugin() {
             image_url: m.avatar
           }
         }))}
+        unassignedCount={unassignedConvs.length}
+        availableCapacity={capacityMetrics.availableCapacity}
       />
       <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}
@@ -4207,6 +4579,7 @@ export function AvailabilityPlugin() {
                   cities={cities}
                   agentsByCity={agentsByCity}
                   currentTime={currentTime}
+                  tseOpenChatCounts={capacityMetrics.tseOpenChatMap}
                 />
               </div>
             </div>
@@ -4228,7 +4601,7 @@ export function AvailabilityPlugin() {
           marginRight: '-20px'
         }}>
           {/* TSE Status Counts */}
-          {(tseCounts.active !== undefined || tseCounts.away !== undefined) && (
+          {(tseCounts.active !== undefined || tseCounts.away !== undefined || capacityMetrics.tseAtCapacityCount !== undefined) && (
             <div className="tse-status-sidebar-counts">
               {tseCounts.active !== undefined && (
                 <div className="tse-status-sidebar-stat">
@@ -4244,6 +4617,25 @@ export function AvailabilityPlugin() {
                     {tseCounts.away}
                   </div>
                   <div className="tse-status-sidebar-label">Away</div>
+                </div>
+              )}
+              {capacityMetrics.tseAtCapacityCount !== undefined && (
+                <div className="tse-status-sidebar-stat">
+                  <div 
+                    className="tse-status-sidebar-value" 
+                    style={{ 
+                      color: capacityMetrics.tseAtCapacityCount === 0 
+                        ? '#10b981' // Green for 0
+                        : capacityMetrics.tseAtCapacityCount <= 2
+                        ? '#f59e0b' // Yellow for 1-2
+                        : capacityMetrics.tseAtCapacityCount <= 4
+                        ? '#f97316' // Orange for 3-4
+                        : '#ef4444' // Red for 5+
+                    }}
+                  >
+                    {capacityMetrics.tseAtCapacityCount}
+                  </div>
+                  <div className="tse-status-sidebar-label">TSE @ Capacity</div>
                 </div>
               )}
             </div>

@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
 
-// API base URL - always use queue-health-monitor since that's where the API is deployed
-const API_BASE_URL = 'https://queue-health-monitor.vercel.app'
+// API base URL (queue-health-monitor). Configured at runtime via /config.js in Cloud Run.
+const API_BASE_URL = getQhmApiBaseUrl()
+const LOG = isDebugEnabled()
 
 export interface DailyMetrics {
   chatsToday: number
@@ -53,7 +55,7 @@ export function useDailyMetrics(options: UseDailyMetricsOptions = {}) {
     )
 
     if (isLocalhost) {
-      console.log('[useDailyMetrics] Localhost detected, returning mock data')
+      if (LOG) console.log('[useDailyMetrics] Localhost detected, returning mock data')
       setState({
         metrics: {
           chatsToday: 47,
@@ -70,7 +72,7 @@ export function useDailyMetrics(options: UseDailyMetricsOptions = {}) {
 
     try {
       const apiUrl = `${API_BASE_URL}/api/intercom/conversations/daily-metrics`
-      console.log('[useDailyMetrics] Fetching from:', apiUrl)
+      if (LOG) console.log('[useDailyMetrics] Fetching from:', apiUrl)
       const fetchStartTime = performance.now()
 
       const response = await fetch(apiUrl, {
@@ -82,7 +84,7 @@ export function useDailyMetrics(options: UseDailyMetricsOptions = {}) {
       })
 
       const fetchDuration = performance.now() - fetchStartTime
-      console.log(`[useDailyMetrics] API call took ${Math.round(fetchDuration)}ms`)
+      if (LOG) console.log(`[useDailyMetrics] API call took ${Math.round(fetchDuration)}ms`)
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -91,7 +93,7 @@ export function useDailyMetrics(options: UseDailyMetricsOptions = {}) {
 
       const data = await response.json()
       
-      console.log('[useDailyMetrics] Received metrics:', data)
+      if (LOG) console.log('[useDailyMetrics] Received metrics:', data)
 
       setState({
         metrics: {
@@ -105,7 +107,7 @@ export function useDailyMetrics(options: UseDailyMetricsOptions = {}) {
         lastUpdated: new Date(),
       })
     } catch (error) {
-      console.error('[useDailyMetrics] Error fetching metrics:', error)
+      if (LOG) console.error('[useDailyMetrics] Error fetching metrics:', error)
       setState(prev => ({
         ...prev,
         loading: false,

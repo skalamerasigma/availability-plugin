@@ -1,13 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
 
-// API base URL - always use queue-health-monitor since that's where the API is deployed
-// The status-plugin is a separate deployment that consumes this API
-const getApiBaseUrl = () => {
-  // Always use the queue-health-monitor API regardless of where this plugin is hosted
-  return 'https://queue-health-monitor.vercel.app'
-}
-
-const API_BASE_URL = getApiBaseUrl()
+// API base URL (queue-health-monitor). Configured at runtime via /config.js in Cloud Run.
+const API_BASE_URL = getQhmApiBaseUrl()
+const LOG = isDebugEnabled()
 
 export interface IntercomConversation {
   id: string
@@ -112,7 +108,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
       const queryString = params.toString()
       const apiUrl = `${API_BASE_URL}/api/intercom/conversations/open-team-5480079${queryString ? `?${queryString}` : ''}`
       
-      console.log('[useIntercomData] Fetching from:', apiUrl)
+      if (LOG) console.log('[useIntercomData] Fetching from:', apiUrl)
       const fetchStartTime = performance.now()
 
       const response = await fetch(apiUrl, {
@@ -124,7 +120,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
       })
 
       const fetchDuration = performance.now() - fetchStartTime
-      console.log(`[useIntercomData] API call took ${Math.round(fetchDuration)}ms`)
+      if (LOG) console.log(`[useIntercomData] API call took ${Math.round(fetchDuration)}ms`)
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -139,7 +135,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
         : (data.conversations || [])
       const teamMembers: IntercomTeamMember[] = data.teamMembers || []
 
-      console.log(`[useIntercomData] Received ${conversations.length} conversations, ${teamMembers.length} team members`)
+      if (LOG) console.log(`[useIntercomData] Received ${conversations.length} conversations, ${teamMembers.length} team members`)
       
       // Log state breakdown
       const stateCounts = conversations.reduce((acc, conv) => {
@@ -147,7 +143,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
         acc[convState] = (acc[convState] || 0) + 1
         return acc
       }, {} as Record<string, number>)
-      console.log('[useIntercomData] Conversation states:', stateCounts)
+      if (LOG) console.log('[useIntercomData] Conversation states:', stateCounts)
 
       setState({
         conversations,
@@ -157,7 +153,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
         lastUpdated: new Date(),
       })
     } catch (error) {
-      console.error('[useIntercomData] Error fetching data:', error)
+      if (LOG) console.error('[useIntercomData] Error fetching data:', error)
       setState(prev => ({
         ...prev,
         loading: false,

@@ -1,0 +1,57 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-t',
+        'gcr.io/$PROJECT_ID/support-queue-live:$BUILD_ID',
+        '-t',
+        'gcr.io/$PROJECT_ID/support-queue-live:latest',
+        '.',
+      ]
+
+  # Push the Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/support-queue-live:$BUILD_ID']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/support-queue-live:latest']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+
+        REGION="us-central1"
+        SERVICE_NAME="support-queue-live"
+        QHM_SERVICE_NAME="queue-health-monitor"
+
+        # Pull the current Cloud Run URL for queue-health-monitor and inject it so the
+        # frontend targets the Google (Cloud Run) endpoints, not Vercel.
+        # NOTE: Use $$ to escape Cloud Build substitutions for bash variables.
+        QHM_URL="$(gcloud run services describe "$$QHM_SERVICE_NAME" --region "$$REGION" --format='value(status.url)')"
+        if [ -z "$$QHM_URL" ]; then
+          echo "ERROR: Could not resolve Cloud Run URL for $$QHM_SERVICE_NAME in $$REGION" >&2
+          exit 1
+        fi
+
+        echo "Deploying $$SERVICE_NAME with QHM_API_BASE_URL=$$QHM_URL"
+
+        gcloud run deploy "$$SERVICE_NAME" \
+          --image "gcr.io/$PROJECT_ID/support-queue-live:$BUILD_ID" \
+          --region "$$REGION" \
+          --platform managed \
+          --allow-unauthenticated \
+          --set-env-vars "QHM_API_BASE_URL=$$QHM_URL,ALLOWED_ORIGIN=https://app.sigmacomputing.com"
+
+images:
+  - 'gcr.io/$PROJECT_ID/support-queue-live:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/support-queue-live:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+

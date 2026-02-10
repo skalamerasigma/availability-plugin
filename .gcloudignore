@@ -1,0 +1,24 @@
+.gcloudignore
+.git
+.gitignore
+.cursor/
+.DS_Store
+*.log
+
+# dependencies
+node_modules/
+
+# build output (built in Docker)
+dist/
+
+# local env / secrets
+.env
+.env.*
+
+# misc local files
+coverage/
+*.md
+!README.md
+*.csv
+*.sql
+*.tx

@@ -1,9 +1,11 @@
 import type { AgentData, AgentStatus } from '../types'
+import { getTSECapacity } from '../data/tseCapacityExceptions'
 
 interface AgentCardProps {
   agent: AgentData
   needsSpacing?: boolean
   isFirstInGroup?: boolean
+  openChatCount?: number // Number of open chats for this TSE
 }
 
 const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string }> = {
@@ -16,7 +18,7 @@ const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string }> = {
 
 const ZOOM_SVG_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1765391289/1996_Nintendo_16_bbdtpn.svg'
 
-export function AgentCard({ agent, needsSpacing = false, isFirstInGroup = false }: AgentCardProps) {
+export function AgentCard({ agent, needsSpacing = false, isFirstInGroup = false, openChatCount }: AgentCardProps) {
   const statusConfig = STATUS_CONFIG[agent.status]
   
   // Use the actual Intercom emoji if available, but replace lunch emoji
@@ -69,12 +71,16 @@ export function AgentCard({ agent, needsSpacing = false, isFirstInGroup = false 
   }
 
   const minutesText = formatMinutes(agent.minutesInStatus)
+  
+  // Check if TSE is at capacity (at or above their specific limit)
+  const tseCapacityLimit = getTSECapacity(agent.name)
+  const isAtCapacity = openChatCount !== undefined && openChatCount >= tseCapacityLimit
 
   return (
     <div
       className={classNames}
       style={{ backgroundImage: `url("${agent.avatar}")` }}
-      title={`${agent.name} - ${displayLabel}${minutesText ? ` (${minutesText})` : ''}${isWarning ? ' ⚠️ Scheduled for chat' : ''}`}
+      title={`${agent.name} - ${displayLabel}${minutesText ? ` (${minutesText})` : ''}${isWarning ? ' ⚠️ Scheduled for chat' : ''}${isAtCapacity ? ' 🚫 @ Capacity' : ''}`}
     >
       <div
         className="status-badge emoji-badge"
@@ -91,6 +97,28 @@ export function AgentCard({ agent, needsSpacing = false, isFirstInGroup = false 
           displayEmoji || '🏡'
         )}
       </div>
+      {isAtCapacity && (
+        <div 
+          className="capacity-badge"
+          style={{
+            position: 'absolute',
+            bottom: '-8px',
+            right: '-8px',
+            background: '#ef4444',
+            color: '#fff',
+            fontSize: '9px',
+            fontWeight: 700,
+            padding: '2px 6px',
+            borderRadius: '10px',
+            whiteSpace: 'nowrap',
+            zIndex: 10,
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+            border: '2px solid #fff'
+          }}
+        >
+          @ Capacity
+        </div>
+      )}
       {minutesText && (
         <div className="agent-minutes">
           {minutesText}

@@ -1,1 +1,22 @@
-.vercel
+.vercel/
+
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# local env / secrets
+.env
+.env.*
+
+# logs / misc
+*.log
+*.tx
+.DS_Store
+
+# large binaries
+skaffold
+
+# tooling
+.cursor/

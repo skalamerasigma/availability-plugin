@@ -6,9 +6,10 @@ interface AgentZonesProps {
   cities: City[]
   agentsByCity: Map<string, AgentData[]>
   currentTime: Date
+  tseOpenChatCounts?: Map<string, number> // Map of TSE name (lowercase) to open chat count
 }
 
-export function AgentZones({ cities, agentsByCity, currentTime }: AgentZonesProps) {
+export function AgentZones({ cities, agentsByCity, currentTime, tseOpenChatCounts }: AgentZonesProps) {
   // Calculate which cities are currently active
   const nowUTC = useMemo(() => {
     return (
@@ -82,12 +83,20 @@ export function AgentZones({ cities, agentsByCity, currentTime }: AgentZonesProp
                 // Need spacing when transitioning between color groups (except for the very first agent)
                 const needsSpacing = isColorTransition
                 
+                // Get open chat count for this agent
+                const agentNameLower = agent.name.trim().toLowerCase()
+                const firstName = agentNameLower.split(' ')[0]
+                const openChatCount = tseOpenChatCounts?.get(agentNameLower) || 
+                                     tseOpenChatCounts?.get(firstName) || 
+                                     undefined
+                
                 return (
                   <AgentCard 
                     key={agent.id} 
                     agent={agent}
                     needsSpacing={needsSpacing || undefined}
                     isFirstInGroup={isFirstInGroup || undefined}
+                    openChatCount={openChatCount}
                   />
                 )
               })}

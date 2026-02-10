@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { TEAM_MEMBERS } from '../data/teamMembers'
+import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
 
 interface TSEConversationData {
   tseName: string
@@ -11,6 +12,9 @@ interface TSEConversationData {
   closedCount: number
   chatsTakenCount: number
 }
+
+const QHM_API_BASE_URL = getQhmApiBaseUrl()
+const LOG = isDebugEnabled()
 
 interface TSEDetailData {
   name: string
@@ -638,21 +642,23 @@ export function TSEConversationTable({
       return null
     }
     
-    console.log('[TSEConversationTable] Calculating counts from Intercom data:', {
-      conversationsCount: intercomConversations.length,
-      teamMembersCount: intercomTeamMembers.length
-    })
+    if (LOG) {
+      console.log('[TSEConversationTable] Calculating counts from Intercom data:', {
+        conversationsCount: intercomConversations.length,
+        teamMembersCount: intercomTeamMembers.length,
+      })
+    }
     
     const counts = calculateTSECountsFromIntercom(intercomConversations, intercomTeamMembers)
     
-    console.log('[TSEConversationTable] Calculated TSE counts:', counts)
+    if (LOG) console.log('[TSEConversationTable] Calculated TSE counts:', counts)
     return counts
   }, [intercomConversations, intercomTeamMembers])
 
   // Use Intercom data if available, otherwise fetch from API
   useEffect(() => {
     if (intercomData && intercomData.length > 0) {
-      console.log('[TSEConversationTable] Using Intercom data')
+      if (LOG) console.log('[TSEConversationTable] Using Intercom data')
       setConversationData(intercomData)
       setLoading(false)
       setError(null)
@@ -667,8 +673,14 @@ export function TSEConversationTable({
     }
     
     try {
-      const apiUrl = 'https://queue-health-monitor.vercel.app/api/intercom/conversations/tse-counts'
-      const response = await fetch(apiUrl)
+      const apiUrl = `${QHM_API_BASE_URL}/api/intercom/conversations/tse-counts`
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      })
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)

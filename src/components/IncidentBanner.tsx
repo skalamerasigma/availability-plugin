@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
 
 interface TrendingData {
   direction: 'up' | 'down'
@@ -34,9 +35,10 @@ interface IncidentBannerProps {
   closedCount?: number
   chatsTrending?: TrendingData | null
   previousClosed?: number | null
-  zoomCallCount?: number
   medianResponseTime?: number | null
   teamMembers?: TeamMember[]
+  unassignedCount?: number
+  availableCapacity?: number
 }
 
 interface Incident {
@@ -50,8 +52,9 @@ const INCIDENT_IO_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/
 const INCIDENT_IO_LOGO_URL_DARK = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769843507/SQL_16_lighjh.svg'
 const DASHBOARD_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769680535/SQL_14_ielazn.svg'
 const DASHBOARD_LOGO_URL_DARK = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769843414/SQL_15_upfjgr.svg'
-const ZOOM_ICON_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769458061/1996_Nintendo_22_oorusp.svg'
 const ROTATION_INTERVAL_MS = 10000 // 10 seconds
+const QHM_API_BASE_URL = getQhmApiBaseUrl()
+const LOG = isDebugEnabled()
 
 export function IncidentBanner({
   incidentsData,
@@ -64,9 +67,10 @@ export function IncidentBanner({
   closedCount,
   chatsTrending,
   previousClosed,
-  zoomCallCount,
   medianResponseTime,
   teamMembers = [],
+  unassignedCount,
+  availableCapacity,
 }: IncidentBannerProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [onCallData, setOnCallData] = useState<OnCallPerson[]>([])
@@ -94,18 +98,23 @@ export function IncidentBanner({
   // Fetch on-call data from Incident.io
   const fetchOnCallData = useCallback(async () => {
     try {
-      const response = await fetch('https://queue-health-monitor.vercel.app/api/incident-io/on-call')
+      const response = await fetch(`${QHM_API_BASE_URL}/api/incident-io/on-call`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      })
       if (!response.ok) {
-        console.error('[IncidentBanner] Failed to fetch on-call data:', response.status)
+        if (LOG) console.error('[IncidentBanner] Failed to fetch on-call data:', response.status)
         return
       }
       const data = await response.json()
-      console.log('[IncidentBanner] On-call data:', data)
-      console.log('[IncidentBanner] On-call count:', data.onCall?.length || 0)
-      console.log('[IncidentBanner] On-call schedules:', data.onCall?.map((p: OnCallPerson) => p.scheduleName) || [])
+      // Avoid logging raw payloads (can include emails).
+      if (LOG) console.log('[IncidentBanner] On-call count:', data.onCall?.length || 0)
       setOnCallData(data.onCall || [])
     } catch (error) {
-      console.error('[IncidentBanner] Error fetching on-call data:', error)
+      if (LOG) console.error('[IncidentBanner] Error fetching on-call data:', error)
     }
   }, [])
 
@@ -560,49 +569,160 @@ export function IncidentBanner({
           </>
         )}
 
-        {/* Median Response Time */}
-        {medianResponseTime !== undefined && medianResponseTime !== null && (
+        {/* Reso Queue Container */}
+        {(unassignedCount !== undefined || availableCapacity !== undefined || (medianResponseTime !== undefined && medianResponseTime !== null)) && (
           <>
             <div className="incident-banner-divider"></div>
-            <div className="response-time-section">
-              <div className="response-time-value">
-                {formatResponseTime(medianResponseTime)}
+            <div style={{
+              display: 'flex',
+              flex: '1 1 0%',
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}>
+              <div className="zoom-call-section">
+                <div style={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  gap: '8px' 
+                }}>
+                  <div style={{ 
+                    fontSize: '14px', 
+                    fontWeight: 600, 
+                    color: 'var(--text-secondary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Reso Queue
+                  </div>
+                  <div className="zoom-icon-container" style={{ 
+                    position: 'relative', 
+                    display: 'flex', 
+                    flexDirection: 'row',
+                    alignItems: 'flex-start', 
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    maxWidth: '600px',
+                    margin: '0 auto',
+                    gap: '32px'
+                  }}>
+                  {unassignedCount !== undefined && (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flex: '0 1 auto',
+                      minWidth: '120px'
+                    }}>
+                        <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '8px 16px',
+                        borderRadius: '999px',
+                        backgroundColor: unassignedCount > 10 
+                          ? 'rgba(253, 135, 137, 0.15)'
+                          : unassignedCount > 5
+                          ? 'rgba(255, 193, 7, 0.2)'
+                          : 'rgba(76, 236, 140, 0.2)',
+                        color: unassignedCount > 10 
+                          ? '#fd8789'
+                          : unassignedCount > 5
+                          ? '#ffc107'
+                          : '#4cec8c',
+                        fontSize: '42px',
+                        fontWeight: 700,
+                        lineHeight: 1
+                      }}>
+                        {unassignedCount}
+                        </span>
+                        <div style={{
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        color: 'var(--text-secondary)',
+                        textAlign: 'center',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        Chats Waiting
+                        </div>
+                      </div>
+                  )}
+                  {availableCapacity !== undefined && (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flex: '0 1 auto',
+                      minWidth: '140px'
+                    }}>
+                      <div style={{
+                        fontSize: '42px',
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        color: availableCapacity > 0 ? '#10b981' : '#ef4444'
+                      }}>
+                        {availableCapacity > 0 ? `+${availableCapacity}` : availableCapacity}
+                      </div>
+                      <div style={{
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        color: 'var(--text-secondary)',
+                        textAlign: 'center',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        lineHeight: 1.3
+                      }}>
+                        <div>Assignment</div>
+                        <div>Availability</div>
+                      </div>
+                    </div>
+                  )}
+                  {medianResponseTime !== undefined && medianResponseTime !== null && (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flex: '0 1 auto',
+                      minWidth: '120px'
+                    }}>
+                      <div style={{
+                        fontSize: '42px',
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        color: 'var(--text-primary)'
+                      }}>
+                        {formatResponseTime(medianResponseTime)}
+                      </div>
+                      <div style={{
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        color: 'var(--text-secondary)',
+                        textAlign: 'center',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        Median Response
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="response-time-label">Median Response</div>
             </div>
-          </>
-        )}
-
-        {/* Zoom Call Count */}
-        {zoomCallCount !== undefined && (
-          <>
+            </div>
             <div className="incident-banner-divider"></div>
-            <div className="zoom-call-section">
-              <div className="zoom-icon-container">
-                <img
-                  src={ZOOM_ICON_URL}
-                  alt="Zoom calls"
-                  className="zoom-icon"
-                  style={{
-                    opacity: zoomCallCount === 0 ? 0.4 : 1,
-                    filter: zoomCallCount === 0 ? 'grayscale(100%)' : 'none',
-                    transition: 'opacity 0.3s ease, filter 0.3s ease'
-                  }}
-                />
-                {zoomCallCount > 0 && (
-                  <span className="zoom-badge">{zoomCallCount}</span>
-                )}
-              </div>
-              <div className="zoom-label">On Zoom</div>
-            </div>
           </>
         )}
 
         {/* Incident Section - Right Aligned */}
         <div className="incident-banner-incident-section-wrapper">
-          <div className="incident-banner-divider"></div>
           <div className="incident-banner-incident-section">
-          {/* Incident Info */}
+            {/* Incident Info */}
           <div className="incident-banner-details">
             {hasIncidents && currentIncident ? (
               <>
