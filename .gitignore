@@ -1,5 +1,3 @@
-.vercel/
-
 # dependencies
 node_modules/
 
@@ -15,8 +13,14 @@ dist/
 *.tx
 .DS_Store
 
+# data exports / scratch files
+*.csv
+*.sql
+*.md
+
 # large binaries
 skaffold
 
-# tooling
+# tooling / deployment artifacts
 .cursor/
+.vercel/
