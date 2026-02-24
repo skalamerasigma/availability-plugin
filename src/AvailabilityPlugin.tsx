@@ -909,8 +909,18 @@ function CoinPodiumCard({ intercomTeamMembers = [] }: CoinPodiumCardProps) {
 
   // --- Modal date-range fetch ---
 
+  const [modalCache, setModalCache] = useState<Record<string, { leaderboard: CoinLeaderboardRow[], totalAwarded: number }>>({})
+
   const fetchModalLeaderboard = useCallback(async (preset: DateRangePreset) => {
-    setModalLoading(true)
+    // If we have cached data for this preset, use it immediately to prevent loading flashes
+    const cached = modalCache[preset.label]
+    if (cached) {
+      setModalLeaderboard(cached.leaderboard)
+      setModalTotalAwarded(cached.totalAwarded)
+    } else {
+      setModalLoading(true)
+    }
+
     try {
       if (isLocalhost) {
         const mock = getMockCoinLeaderboard()
@@ -924,16 +934,26 @@ function CoinPodiumCard({ intercomTeamMembers = [] }: CoinPodiumCardProps) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const payload = await response.json()
       const rows: CoinLeaderboardRow[] = Array.isArray(payload?.leaderboard) ? payload.leaderboard : []
+      const totalAwarded = typeof payload?.totalAwarded === 'number' ? payload.totalAwarded : rows.reduce((s, r) => s + r.totalCoins, 0)
+      
       setModalLeaderboard(rows)
-      setModalTotalAwarded(typeof payload?.totalAwarded === 'number' ? payload.totalAwarded : rows.reduce((s, r) => s + r.totalCoins, 0))
+      setModalTotalAwarded(totalAwarded)
+      
+      // Update cache
+      setModalCache(prev => ({
+        ...prev,
+        [preset.label]: { leaderboard: rows, totalAwarded }
+      }))
     } catch (err) {
       console.warn('[CoinPodium] Modal fetch failed:', err)
-      setModalLeaderboard([])
-      setModalTotalAwarded(0)
+      if (!cached) {
+        setModalLeaderboard([])
+        setModalTotalAwarded(0)
+      }
     } finally {
       setModalLoading(false)
     }
-  }, [coinsLeaderboardEndpoint, getMockCoinLeaderboard, isLocalhost])
+  }, [coinsLeaderboardEndpoint, getMockCoinLeaderboard, isLocalhost, modalCache])
 
   const handleOpenModal = useCallback(() => {
     const todayPreset = dateRangePresets[0]
