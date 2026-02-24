@@ -53,7 +53,15 @@ function normalizeConfiguredOrigin(value) {
   if (!value || typeof value !== 'string') return null
 
   const trimmed = value.trim()
-  if (!trimmed || trimmed === '*') return null
+  if (!trimmed) return null
+
+  // Allow explicitly disabling clickjacking protection (use with care).
+  // In CSP, `frame-ancestors *` means "allow any site to frame this page".
+  if (trimmed === '*') return '*'
+
+  // Support CSP wildcard patterns (e.g. https://*.sigmacomputing.com).
+  if (trimmed.includes('*')) return trimmed
+
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return normalizeOrigin(trimmed)
   }
@@ -63,16 +71,9 @@ function normalizeConfiguredOrigin(value) {
 }
 
 function getAllowedFrameAncestors() {
-  const configured = (process.env.ALLOWED_ORIGIN || '')
-    .split(',')
-    .map((value) => normalizeConfiguredOrigin(value))
-    .filter(Boolean)
-
-  const fallback = configured.length > 0 ? [] : ['https://app.sigmacomputing.com']
-  const localDev =
-    process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000', 'http://127.0.0.1:3000']
-
-  return ["'self'", ...new Set([...configured, ...fallback, ...localDev])]
+  // This is a Sigma Computing plugin designed to be embedded in an iframe.
+  // Sigma may load plugins through intermediate domains, so we allow all ancestors.
+  return ['*']
 }
 
 function buildCsp(req) {
@@ -108,6 +109,100 @@ app.use((req, res, next) => {
 
 // Body parsing (needed for /api/*)
 app.use(express.json({ limit: '1mb' }))
+
+// -------------------------
+// API Routes
+// -------------------------
+app.get('/api/intercom/available-tses', async (req, res) => {
+  try {
+    const apiKey = process.env.INTERCOM_API_KEY
+    if (!apiKey) {
+      return res.status(500).json({ error: 'INTERCOM_API_KEY is not configured on the server' })
+    }
+
+    const headers = {
+      'Authorization': `Bearer ${apiKey}`,
+      'Accept': 'application/json',
+      'Intercom-Version': 'Unstable'
+    }
+
+    // Fetch away reasons
+    const reasonsRes = await fetch('https://api.intercom.io/away_status_reasons', { headers })
+    if (!reasonsRes.ok) throw new Error(`Failed to fetch away reasons: ${reasonsRes.status}`)
+    const reasonsData = await reasonsRes.json()
+
+    // Fetch team details to get admin IDs for team 5480079
+    const teamRes = await fetch('https://api.intercom.io/teams/5480079', { headers })
+    if (!teamRes.ok) throw new Error(`Failed to fetch team: ${teamRes.status}`)
+    const teamData = await teamRes.json()
+    
+    const adminIds = teamData.admin_ids || []
+    
+    // Fetch each admin individually to get the away_status_reason_id (not present in list API)
+    // We do this in chunks to avoid overwhelming the API or hitting rate limits
+    const admins = []
+    const chunkSize = 10
+    
+    for (let i = 0; i < adminIds.length; i += chunkSize) {
+      const chunk = adminIds.slice(i, i + chunkSize)
+      const promises = chunk.map(id => 
+        fetch(`https://api.intercom.io/admins/${id}`, { headers })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      )
+      const results = await Promise.all(promises)
+      admins.push(...results.filter(Boolean))
+    }
+
+    // Fetch recent activity logs to calculate "minutes away"
+    const awayTimes = {}
+    try {
+      let page = 1
+      const allLogs = []
+      while (page <= 5) { // Fetch up to 500 recent events
+        const logRes = await fetch(`https://api.intercom.io/admins/activity_logs?per_page=100&page=${page}`, { headers })
+        if (!logRes.ok) break
+        const logData = await logRes.json()
+        if (!logData.activity_logs || logData.activity_logs.length === 0) break
+        allLogs.push(...logData.activity_logs)
+        page++
+      }
+      
+      // Process from oldest to newest
+      allLogs.reverse().forEach(log => {
+        if (log.activity_type === 'admin_away_mode_change') {
+          const adminId = String(log.metadata?.update_by || log.performed_by?.id)
+          if (log.metadata?.away_mode === true) {
+            if (!awayTimes[adminId]) {
+              awayTimes[adminId] = log.created_at
+            }
+          } else {
+            awayTimes[adminId] = null
+          }
+        }
+      })
+    } catch (e) {
+      console.warn("Could not fetch activity logs for minutes away:", e)
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    admins.forEach(admin => {
+      if (admin.away_mode_enabled && awayTimes[admin.id]) {
+        admin.minutes_away = Math.max(0, Math.floor((nowSeconds - awayTimes[admin.id]) / 60))
+      } else {
+        admin.minutes_away = null
+      }
+    })
+
+    res.json({
+      admins: admins || [],
+      awayReasons: reasonsData.data || []
+    })
+  } catch (err) {
+    console.error('Error proxying Intercom API:', err)
+    res.status(500).json({ error: 'Failed to fetch data from Intercom' })
+  }
+})
 
 // -------------------------
 // Runtime config endpoint

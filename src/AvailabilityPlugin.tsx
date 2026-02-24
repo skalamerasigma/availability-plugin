@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef, Component, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   client,
   useConfig,
@@ -107,11 +108,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return this.props.children
   }
 }
-import { AgentZones } from './components/AgentZones'
-import { Legend } from './components/Legend'
+// Legend import removed — legend no longer rendered
 import { FallbackGauge } from './components/FallbackGauge'
-import { OfficeHours } from './components/OfficeHours'
 import { OOOProfilePictures } from './components/OOOProfilePictures'
+import { OfficeHours } from './components/OfficeHours'
 import { TSEConversationTable } from './components/TSEConversationTable'
 import { IncidentBanner } from './components/IncidentBanner'
 import { DarkModeToggle } from './components/DarkModeToggle'
@@ -119,6 +119,8 @@ import { AudioToggle } from './components/AudioToggle'
 import { useAgentDataFromApi } from './hooks/useAgentData'
 import { useIntercomData } from './hooks/useIntercomData'
 import { useDailyMetrics } from './hooks/useDailyMetrics'
+import { useChatsByHour } from './hooks/useChatsByHour'
+import { useWebhookAwayStatus } from './hooks/useWebhookAwayStatus'
 import { TEAM_MEMBERS } from './data/teamMembers'
 import { getTSECapacity } from './data/tseCapacityExceptions'
 import type { City, AgentData, AgentStatus } from './types'
@@ -196,37 +198,37 @@ client.config.configureEditorPanel([
 
   // === LEGACY DATA SOURCE (for non-schedule based status) ===
   {
-    name: 'source',
+    name: 'Status Source',
     type: 'element',
   },
   {
     name: 'agentName',
     type: 'column',
-    source: 'source',
+    source: 'Status Source',
     allowMultiple: false,
   },
   {
     name: 'agentAvatar',
     type: 'column',
-    source: 'source',
+    source: 'Status Source',
     allowMultiple: false,
   },
   {
     name: 'agentStatus',
     type: 'column',
-    source: 'source',
+    source: 'Status Source',
     allowMultiple: false,
   },
   {
     name: 'agentMinutesInStatus',
     type: 'column',
-    source: 'source',
+    source: 'Status Source',
     allowMultiple: false,
   },
   {
     name: 'agentTimezone',
     type: 'column',
-    source: 'source',
+    source: 'Status Source',
     allowMultiple: false,
   },
 
@@ -241,16 +243,6 @@ client.config.configureEditorPanel([
     name: 'defaultIntensity',
     type: 'text',
     defaultValue: '35',
-  },
-  {
-    name: 'chatsSource',
-    type: 'element',
-  },
-  {
-    name: 'chatsTriggerColumn',
-    type: 'column',
-    source: 'chatsSource',
-    allowMultiple: false,
   },
   {
     name: 'autoIntensity',
@@ -318,48 +310,24 @@ client.config.configureEditorPanel([
     allowMultiple: false,
   },
 
-  // === IR (INITIAL RESPONSE) DATA SOURCE CONFIGURATION ===
-  // Connect to the IR Plugin view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.IR_PLUGIN)
-  // This view contains conversation data with ADJUSTED_IR_S for median calculation
-  {
-    name: 'irSource',
-    type: 'element',
-  },
-  {
-    name: 'irAdjustedIrS',
-    type: 'column',
-    source: 'irSource',
-    allowMultiple: false,
-  },
 
-  // === INCIDENTS DATA SOURCE CONFIGURATION ===
-  // Connect to the Incidents view (SIGMA_ON_SIGMA.SIGMA_WRITABLE.ALL_INCIDENTS_EXPLODED_API_RESPONSE)
+  // === CHATS PER HOUR DATA SOURCE CONFIGURATION ===
+  // Connect to a worksheet that groups today's conversations by UTC hour
+  // Expected columns: hour_bucket (timestamp), chat_count (number)
   {
-    name: 'incidentsSource',
+    name: 'chatsPerHourSource',
     type: 'element',
   },
   {
-    name: 'incidentDetails',
+    name: 'chatsPerHourBucket',
     type: 'column',
-    source: 'incidentsSource',
+    source: 'chatsPerHourSource',
     allowMultiple: false,
   },
   {
-    name: 'incidentSevStatus',
+    name: 'chatsPerHourCount',
     type: 'column',
-    source: 'incidentsSource',
-    allowMultiple: false,
-  },
-  {
-    name: 'incidentCreatedAt',
-    type: 'column',
-    source: 'incidentsSource',
-    allowMultiple: false,
-  },
-  {
-    name: 'incidentUpdatedAt',
-    type: 'column',
-    source: 'incidentsSource',
+    source: 'chatsPerHourSource',
     allowMultiple: false,
   },
 
@@ -578,6 +546,11 @@ function getScheduleEmoji(block: string | null | undefined, isOOO: boolean): str
 // ============================================
 const MOCK_SCENARIO: 1 | 2 = 2  // 1 = Demo with fly-away, 2 = 9 scattered bubbles (no fly-away)
 
+/** When a mock conversation is "assigned", which TSE to award the coin to (for demo / API) */
+const MOCK_ASSIGNEE_BY_CONV: Record<string, { assignedTseId: string; assignedTseName: string }> = {
+  'mock-2010': { assignedTseId: 'ankita', assignedTseName: 'Ankita' },
+}
+
 function getMockUnassignedConversations(nowSeconds: number): any[] {
   if (MOCK_SCENARIO === 1) {
     // SCENARIO 1: Simple demo - 3 bubbles with fly-away animation
@@ -593,6 +566,8 @@ function getMockUnassignedConversations(nowSeconds: number): any[] {
     // SCENARIO 2: Start with mix of bubbles - some fresh, some close to breaching
     // Then add 5 more progressively
     return [
+      // Coin demo: just over 5 min – will be "assigned" after a few seconds to simulate TSE getting a coin
+      { id: 'mock-2003', created_at: nowSeconds - 315, waiting_since: nowSeconds - 315, admin_assignee_id: null, admin_assignee: null }, // 5.25 min
       // Fresh bubble at ~15% (1.5 min = 90 sec)
       { id: 'mock-2001', created_at: nowSeconds - 90, waiting_since: nowSeconds - 90, admin_assignee_id: null, admin_assignee: null },
       // Bubble at ~25% (2.5 min = 150 sec)
@@ -627,6 +602,537 @@ interface ResoQueueBeltProps {
   isAudioEnabled?: boolean
 }
 
+type CoinLeaderboardRow = {
+  tseId: string
+  tseName: string
+  totalCoins: number
+  coins5to10: number
+  coins10Plus: number
+}
+
+interface CoinPodiumCardProps {
+  intercomTeamMembers?: Array<{ id: string | number; name: string; avatar?: any }>
+}
+
+const COIN_SVG_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1771295414/Add_a_subheading_2_kkiweg.svg'
+const PODIUM_HEIGHTS = ['52px', '72px', '40px']
+const MEDAL_COLORS = ['#c0c0c0', '#f59e0b', '#cd7f32']
+const PODIUM_LABELS = ['2nd', '1st', '3rd']
+
+/** Compute a PT date string (YYYY-MM-DD) for a given Date. */
+function toPTDateString(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d)
+}
+
+type DateRangePreset = { label: string; startDate: string; endDate: string }
+
+function getDateRangePresets(): DateRangePreset[] {
+  const now = new Date()
+  const todayPT = toPTDateString(now)
+
+  // Helper: create a Date in PT by parsing the PT date string
+  const ptParts = todayPT.split('-').map(Number)
+  const ptYear = ptParts[0], ptMonth = ptParts[1], ptDay = ptParts[2]
+
+  // Day of week in PT (0=Sun, 1=Mon, ..., 6=Sat)
+  const ptDow = new Date(ptYear, ptMonth - 1, ptDay).getDay()
+
+  const fmt = (y: number, m: number, d: number) =>
+    `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+  // Yesterday
+  const yd = new Date(ptYear, ptMonth - 1, ptDay - 1)
+  const yesterdayPT = fmt(yd.getFullYear(), yd.getMonth() + 1, yd.getDate())
+
+  // This Week (Mon-today)
+  const daysSinceMon = ptDow === 0 ? 6 : ptDow - 1
+  const weekStart = new Date(ptYear, ptMonth - 1, ptDay - daysSinceMon)
+  const thisWeekStart = fmt(weekStart.getFullYear(), weekStart.getMonth() + 1, weekStart.getDate())
+
+  // Last Week (Mon-Fri of previous week)
+  const lastWeekMon = new Date(ptYear, ptMonth - 1, ptDay - daysSinceMon - 7)
+  const lastWeekFri = new Date(ptYear, ptMonth - 1, ptDay - daysSinceMon - 3)
+  const lastWeekStart = fmt(lastWeekMon.getFullYear(), lastWeekMon.getMonth() + 1, lastWeekMon.getDate())
+  const lastWeekEnd = fmt(lastWeekFri.getFullYear(), lastWeekFri.getMonth() + 1, lastWeekFri.getDate())
+
+  // This Month
+  const thisMonthStart = fmt(ptYear, ptMonth, 1)
+
+  // Last Month
+  const lmEnd = new Date(ptYear, ptMonth - 1, 0) // last day of prev month
+  const lmStart = fmt(lmEnd.getFullYear(), lmEnd.getMonth() + 1, 1)
+  const lastMonthEnd = fmt(lmEnd.getFullYear(), lmEnd.getMonth() + 1, lmEnd.getDate())
+
+  // This Quarter (Feb 1 - present)
+  const thisQuarterStart = fmt(ptYear, 2, 1)
+
+  return [
+    { label: 'Today', startDate: todayPT, endDate: todayPT },
+    { label: 'Yesterday', startDate: yesterdayPT, endDate: yesterdayPT },
+    { label: 'This Week', startDate: thisWeekStart, endDate: todayPT },
+    { label: 'Last Week', startDate: lastWeekStart, endDate: lastWeekEnd },
+    { label: 'This Month', startDate: thisMonthStart, endDate: todayPT },
+    { label: 'Last Month', startDate: lmStart, endDate: lastMonthEnd },
+    { label: 'This Quarter', startDate: thisQuarterStart, endDate: todayPT },
+  ]
+}
+
+/** Shared podium renderer used by both the card and the modal. */
+function renderPodium(
+  podiumSlots: Array<CoinLeaderboardRow | undefined>,
+  avatarByName: Map<string, string>,
+  opts?: { large?: boolean }
+) {
+  const large = opts?.large ?? false
+  const avatarSize = large ? '68px' : '56px'
+  const coinSize = large ? '26px' : '22px'
+  const fontSize = large ? '16px' : '14px'
+  const slotWidth = large ? '140px' : '120px'
+  const minH = large ? '180px' : '150px'
+  const gap = large ? '18px' : '14px'
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap, minHeight: minH }}>
+      {podiumSlots.map((row, idx) => {
+        const normalizedName = row?.tseName?.trim().toLowerCase() || ''
+        const avatarUrl = normalizedName
+          ? (avatarByName.get(normalizedName) || avatarByName.get(normalizedName.split(' ')[0] || ''))
+          : ''
+        const initial = row?.tseName?.trim()?.charAt(0)?.toUpperCase() || '?'
+        return (
+          <div key={PODIUM_LABELS[idx]} style={{ width: slotWidth, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: avatarSize, height: avatarSize, borderRadius: '999px', overflow: 'hidden',
+              border: `3px solid ${row ? MEDAL_COLORS[idx] : 'rgba(148,163,184,0.35)'}`,
+              boxShadow: row ? '0 2px 8px rgba(0,0,0,0.2)' : 'none',
+              backgroundColor: row ? '#ffffff' : 'rgba(148,163,184,0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '20px', fontWeight: 800,
+              color: row ? '#1f2937' : 'rgba(148,163,184,0.4)',
+            }}>
+              {row && avatarUrl ? (
+                <img src={avatarUrl} alt={row.tseName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : row ? <span>{initial}</span> : <span>?</span>}
+            </div>
+            {large && row && (
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center', lineHeight: 1.2 }}>
+                {row.tseName.split(' ')[0]}
+              </div>
+            )}
+            {row && (
+              <div style={{ fontSize, fontWeight: 700, color: MEDAL_COLORS[idx] }}>
+                {row.totalCoins} <img src={COIN_SVG_URL} alt="Q-coin" style={{ width: coinSize, height: coinSize, verticalAlign: 'middle', marginLeft: '4px' }} />
+              </div>
+            )}
+            <div style={{
+              width: '100%', height: PODIUM_HEIGHTS[idx], borderRadius: '8px 8px 4px 4px',
+              background: row ? `linear-gradient(180deg, ${MEDAL_COLORS[idx]} 0%, rgba(0,0,0,0.2) 100%)` : 'rgba(148,163,184,0.25)',
+              border: row ? `1px solid ${MEDAL_COLORS[idx]}` : '1px dashed rgba(148,163,184,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#ffffff', fontWeight: 800, fontSize: '13px',
+            }}>
+              {PODIUM_LABELS[idx]}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Resolve raw leaderboard rows: merge duplicates, resolve IDs to names. */
+function resolveLeaderboard(
+  rows: CoinLeaderboardRow[],
+  idToInfo: Map<string, { name: string; avatar: string }>,
+  optimistic?: Record<string, { total: number; coins5to10: number; coins10Plus: number }>
+): CoinLeaderboardRow[] {
+  const byName = new Map<string, CoinLeaderboardRow>()
+  rows.forEach((row) => {
+    const resolvedName = idToInfo.get(row.tseName)?.name || idToInfo.get(row.tseId)?.name || row.tseName
+    if (resolvedName.toLowerCase().includes('holly')) return
+    const key = resolvedName.toLowerCase()
+    const existing = byName.get(key)
+    if (existing) {
+      byName.set(key, {
+        ...existing,
+        totalCoins: existing.totalCoins + row.totalCoins,
+        coins5to10: existing.coins5to10 + row.coins5to10,
+        coins10Plus: existing.coins10Plus + row.coins10Plus,
+      })
+    } else {
+      byName.set(key, { ...row, tseName: resolvedName })
+    }
+  })
+  if (optimistic) {
+    Object.entries(optimistic).forEach(([tseName, add]) => {
+      if (tseName.toLowerCase().includes('holly')) return
+      const key = tseName.toLowerCase()
+      const existing = byName.get(key)
+      if (existing) {
+        byName.set(key, { ...existing, totalCoins: existing.totalCoins + add.total, coins5to10: existing.coins5to10 + add.coins5to10, coins10Plus: existing.coins10Plus + add.coins10Plus })
+      } else {
+        byName.set(key, { tseId: tseName.toLowerCase().replace(/\s+/g, '-'), tseName, totalCoins: add.total, coins5to10: add.coins5to10, coins10Plus: add.coins10Plus })
+      }
+    })
+  }
+  return Array.from(byName.values()).sort((a, b) => b.totalCoins - a.totalCoins)
+}
+
+function CoinPodiumCard({ intercomTeamMembers = [] }: CoinPodiumCardProps) {
+  const [coinLeaderboard, setCoinLeaderboard] = useState<CoinLeaderboardRow[]>([])
+  const [optimisticAwards, setOptimisticAwards] = useState<Record<string, { total: number; coins5to10: number; coins10Plus: number }>>({})
+  const [isLeaderboardModalOpen, setIsLeaderboardModalOpen] = useState(false)
+  const [modalDateRange, setModalDateRange] = useState<DateRangePreset | null>(null)
+  const [modalLeaderboard, setModalLeaderboard] = useState<CoinLeaderboardRow[]>([])
+  const [modalLoading, setModalLoading] = useState(false)
+  const [modalTotalAwarded, setModalTotalAwarded] = useState(0)
+
+  const isLocalhost = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  )
+  const coinsLeaderboardEndpoint = `${QHM_API_BASE_URL}/api/intercom/coins/leaderboard`
+
+  const getMockCoinLeaderboard = useCallback((): {
+    leaderboard: CoinLeaderboardRow[]
+    topCoins: number
+  } => {
+    const leaderboard: CoinLeaderboardRow[] = [
+      { tseId: 'mock-tse-1', tseName: 'Nick', totalCoins: 14, coins5to10: 8, coins10Plus: 6 },
+      { tseId: 'mock-tse-2', tseName: 'Julia', totalCoins: 11, coins5to10: 9, coins10Plus: 2 },
+      { tseId: 'mock-tse-3', tseName: 'Ankita', totalCoins: 9, coins5to10: 7, coins10Plus: 2 },
+    ]
+    return { leaderboard, topCoins: 14 }
+  }, [])
+
+  // --- Modal date-range fetch ---
+  const dateRangePresets = useMemo(() => getDateRangePresets(), [])
+
+  const fetchCoinLeaderboard = useCallback(async () => {
+    if (isLocalhost) {
+      const mock = getMockCoinLeaderboard()
+      setCoinLeaderboard(mock.leaderboard)
+      return
+    }
+    try {
+      const monthPreset = dateRangePresets.find(p => p.label === 'This Month') || dateRangePresets[0]
+      const url = `${coinsLeaderboardEndpoint}?startDate=${monthPreset.startDate}&endDate=${monthPreset.endDate}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      })
+      if (!response.ok) return
+      const payload = await response.json()
+      setCoinLeaderboard(Array.isArray(payload?.leaderboard) ? payload.leaderboard : [])
+    } catch (error) {
+      console.warn('[CoinPodium] Failed to fetch leaderboard:', error)
+    }
+  }, [coinsLeaderboardEndpoint, getMockCoinLeaderboard, isLocalhost, dateRangePresets])
+
+  useEffect(() => {
+    fetchCoinLeaderboard()
+    const interval = setInterval(fetchCoinLeaderboard, 30000)
+    return () => clearInterval(interval)
+  }, [fetchCoinLeaderboard])
+
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const d = (ev as CustomEvent<{ tseName: string; waitBucket: '5_to_10' | '10_plus' }>).detail
+      if (!d?.tseName) return
+      setOptimisticAwards((prev) => {
+        const cur = prev[d.tseName] ?? { total: 0, coins5to10: 0, coins10Plus: 0 }
+        return {
+          ...prev,
+          [d.tseName]: {
+            total: cur.total + 1,
+            coins5to10: cur.coins5to10 + (d.waitBucket === '5_to_10' ? 1 : 0),
+            coins10Plus: cur.coins10Plus + (d.waitBucket === '10_plus' ? 1 : 0),
+          },
+        }
+      })
+    }
+    window.addEventListener('coin-awarded', handler)
+    return () => window.removeEventListener('coin-awarded', handler)
+  }, [])
+
+  const idToInfo = useMemo(() => {
+    const map = new Map<string, { name: string; avatar: string }>()
+    intercomTeamMembers.forEach((member) => {
+      const id = String(member.id)
+      const name = (member.name || '').trim()
+      if (!id || !name) return
+      const staticMember = TEAM_MEMBERS.find(m =>
+        m.name.toLowerCase() === name.toLowerCase() ||
+        m.name.toLowerCase() === name.split(' ')[0].toLowerCase()
+      )
+      map.set(id, { name, avatar: staticMember?.avatar || '' })
+    })
+    return map
+  }, [intercomTeamMembers])
+
+  const avatarByName = useMemo(() => {
+    const map = new Map<string, string>()
+    TEAM_MEMBERS.forEach((member) => {
+      const rawName = (member?.name || '').trim().toLowerCase()
+      if (!rawName || !member?.avatar) return
+      map.set(rawName, member.avatar)
+      const firstName = rawName.split(' ')[0]
+      if (firstName) map.set(firstName, member.avatar)
+    })
+    idToInfo.forEach((info, id) => {
+      if (info.avatar) map.set(id, info.avatar)
+    })
+    return map
+  }, [idToInfo])
+
+  const displayedLeaderboard = useMemo(
+    () => resolveLeaderboard(coinLeaderboard, idToInfo, optimisticAwards),
+    [coinLeaderboard, optimisticAwards, idToInfo]
+  )
+
+  const topThree = displayedLeaderboard.slice(0, 3)
+  const podiumSlots: Array<CoinLeaderboardRow | undefined> = [topThree[1], topThree[0], topThree[2]]
+
+  // --- Modal date-range fetch ---
+
+  const fetchModalLeaderboard = useCallback(async (preset: DateRangePreset) => {
+    setModalLoading(true)
+    try {
+      if (isLocalhost) {
+        const mock = getMockCoinLeaderboard()
+        setModalLeaderboard(mock.leaderboard)
+        setModalTotalAwarded(mock.leaderboard.reduce((s, r) => s + r.totalCoins, 0))
+        setModalLoading(false)
+        return
+      }
+      const url = `${coinsLeaderboardEndpoint}?startDate=${preset.startDate}&endDate=${preset.endDate}`
+      const response = await fetch(url, { method: 'GET', credentials: 'include', headers: { Accept: 'application/json' } })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const payload = await response.json()
+      const rows: CoinLeaderboardRow[] = Array.isArray(payload?.leaderboard) ? payload.leaderboard : []
+      setModalLeaderboard(rows)
+      setModalTotalAwarded(typeof payload?.totalAwarded === 'number' ? payload.totalAwarded : rows.reduce((s, r) => s + r.totalCoins, 0))
+    } catch (err) {
+      console.warn('[CoinPodium] Modal fetch failed:', err)
+      setModalLeaderboard([])
+      setModalTotalAwarded(0)
+    } finally {
+      setModalLoading(false)
+    }
+  }, [coinsLeaderboardEndpoint, getMockCoinLeaderboard, isLocalhost])
+
+  const handleOpenModal = useCallback(() => {
+    const todayPreset = dateRangePresets[0]
+    setModalDateRange(todayPreset)
+    setIsLeaderboardModalOpen(true)
+    fetchModalLeaderboard(todayPreset)
+  }, [dateRangePresets, fetchModalLeaderboard])
+
+  const handlePresetClick = useCallback((preset: DateRangePreset) => {
+    setModalDateRange(preset)
+    fetchModalLeaderboard(preset)
+  }, [fetchModalLeaderboard])
+
+  const resolvedModalLeaderboard = useMemo(
+    () => resolveLeaderboard(modalLeaderboard, idToInfo),
+    [modalLeaderboard, idToInfo]
+  )
+
+  const modalTopThree = resolvedModalLeaderboard.slice(0, 3)
+  const modalPodiumSlots: Array<CoinLeaderboardRow | undefined> = [modalTopThree[1], modalTopThree[0], modalTopThree[2]]
+  const modalRest = resolvedModalLeaderboard.slice(3)
+
+  const hasPodiumData = displayedLeaderboard.length > 0
+
+  return (
+    <>
+      {hasPodiumData && (
+        <div
+          onClick={handleOpenModal}
+          style={{
+            marginBottom: '12px',
+            background: 'var(--bg-card)',
+            borderRadius: '8px',
+            padding: '12px',
+            boxShadow: 'var(--shadow-sm)',
+            cursor: 'pointer',
+            position: 'relative',
+          }}
+        >
+          <div style={{
+            position: 'absolute', 
+            top: '8px', 
+            left: '8px',
+            fontSize: '10px', 
+            fontWeight: 700, 
+            color: 'var(--text-muted)',
+            background: 'rgba(148, 163, 184, 0.1)', 
+            padding: '4px 8px', 
+            borderRadius: '12px',
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase'
+          }}>
+            This Month
+          </div>
+          {renderPodium(podiumSlots, avatarByName)}
+        </div>
+      )}
+
+      {/* Leaderboard Modal */}
+      {isLeaderboardModalOpen && createPortal(
+        <div
+          onClick={() => setIsLeaderboardModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card, #1e293b)', borderRadius: '16px',
+              width: '480px', maxWidth: '95vw', maxHeight: '90vh',
+              overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '16px 20px', borderBottom: '1px solid var(--border-color-light, rgba(255,255,255,0.1))',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <img src={COIN_SVG_URL} alt="Q-coin" style={{ width: '24px', height: '24px' }} />
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary, #f1f5f9)' }}>
+                  Q-Coin Leaderboard
+                </h2>
+              </div>
+              <button
+                onClick={() => setIsLeaderboardModalOpen(false)}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--text-muted, #94a3b8)',
+                  fontSize: '22px', cursor: 'pointer', padding: '0 4px', lineHeight: 1,
+                }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Date range pills */}
+            <div style={{
+              padding: '12px 20px', display: 'flex', flexWrap: 'wrap', gap: '6px',
+              borderBottom: '1px solid var(--border-color-light, rgba(255,255,255,0.1))',
+            }}>
+              {dateRangePresets.map((preset) => {
+                const isActive = modalDateRange?.label === preset.label
+                return (
+                  <button
+                    key={preset.label}
+                    onClick={() => handlePresetClick(preset)}
+                    style={{
+                      padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                      cursor: 'pointer', transition: 'all 0.15s ease',
+                      border: isActive ? '1px solid #f59e0b' : '1px solid var(--border-color-light, rgba(255,255,255,0.15))',
+                      background: isActive ? 'rgba(245,158,11,0.15)' : 'transparent',
+                      color: isActive ? '#f59e0b' : 'var(--text-secondary, #94a3b8)',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Scrollable body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+              {modalLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted, #94a3b8)' }}>
+                  <div style={{ fontSize: '14px' }}>Loading...</div>
+                </div>
+              ) : resolvedModalLeaderboard.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted, #94a3b8)' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '8px' }}>0</div>
+                  <div style={{ fontSize: '14px' }}>No Q-Coins awarded in this period</div>
+                </div>
+              ) : (
+                <>
+                  {/* Total summary */}
+                  <div style={{
+                    textAlign: 'center', marginBottom: '16px', fontSize: '13px',
+                    color: 'var(--text-muted, #94a3b8)',
+                  }}>
+                    <span style={{ fontWeight: 700, color: '#f59e0b', fontSize: '18px' }}>{modalTotalAwarded}</span>
+                    {' '}total coins awarded
+                  </div>
+
+                  {/* Podium */}
+                  {renderPodium(modalPodiumSlots, avatarByName, { large: true })}
+
+                  {/* Ranked list (4th place and below) */}
+                  {modalRest.length > 0 && (
+                    <div style={{ marginTop: '20px' }}>
+                      {modalRest.map((row, idx) => {
+                        const rank = idx + 4
+                        const normalizedName = row.tseName.trim().toLowerCase()
+                        const avatarUrl = avatarByName.get(normalizedName) || avatarByName.get(normalizedName.split(' ')[0] || '')
+                        const initial = row.tseName.trim().charAt(0).toUpperCase()
+                        return (
+                          <div
+                            key={row.tseId}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '12px',
+                              padding: '10px 12px', borderRadius: '8px',
+                              background: idx % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'transparent',
+                            }}
+                          >
+                            <span style={{
+                              width: '28px', textAlign: 'center', fontSize: '14px', fontWeight: 700,
+                              color: 'var(--text-muted, #64748b)',
+                            }}>
+                              #{rank}
+                            </span>
+                            <div style={{
+                              width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden',
+                              border: '2px solid var(--border-color-light, rgba(255,255,255,0.1))',
+                              backgroundColor: 'rgba(148,163,184,0.12)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: '14px', fontWeight: 700, color: 'var(--text-muted, #94a3b8)',
+                              flexShrink: 0,
+                            }}>
+                              {avatarUrl ? (
+                                <img src={avatarUrl} alt={row.tseName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <span>{initial}</span>
+                              )}
+                            </div>
+                            <div style={{ flex: 1, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary, #f1f5f9)' }}>
+                              {row.tseName.split(' ')[0]}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '15px', fontWeight: 700, color: '#f59e0b' }}>
+                              {row.totalCoins}
+                              <img src={COIN_SVG_URL} alt="Q-coin" style={{ width: '20px', height: '20px' }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
 function isConversationUnassigned(conversation: any): boolean {
   const adminAssigneeId = conversation?.admin_assignee_id
   const adminAssignee = conversation?.admin_assignee
@@ -641,7 +1147,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
   const [selectedConversation, setSelectedConversation] = useState<any | null>(null)
   const [explodingIds, setExplodingIds] = useState<Set<string>>(new Set())
   const [flyingAwayIds, setFlyingAwayIds] = useState<Set<string>>(new Set())
-  const [flyingAwayData, setFlyingAwayData] = useState<Map<string, { progress: number, staggerOffset: number }>>(new Map())
+  const [flyingAwayData, setFlyingAwayData] = useState<Map<string, { progress: number, staggerOffset: number, elapsedSeconds?: number }>>(new Map())
   const confirmedBreachedIdsRef = useRef<Set<string>>(new Set())
   const removedIdsRef = useRef<Set<string>>(new Set())
   const checkedIdsRef = useRef<Set<string>>(new Set())
@@ -649,11 +1155,42 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
   const lastResetRef = useRef<number | null>(null)
   const previousBreachedIdsRef = useRef<Set<string>>(new Set())
   const previousUnassignedIdsRef = useRef<Set<string>>(new Set())
-  const conversationDataRef = useRef<Map<string, { progress: number, staggerOffset: number }>>(new Map())
+  const conversationDataRef = useRef<Map<string, { progress: number, staggerOffset: number, elapsedSeconds: number }>>(new Map())
+  const queuedCoinAwardIdsRef = useRef<Set<string>>(new Set())
   const buzzerPlayedIdsRef = useRef<Set<string>>(new Set())
   const newBubbleSoundPlayedIdsRef = useRef<Set<string>>(new Set())
   const audioContextRef = useRef<AudioContext | null>(null)
   const assignmentStatusEndpoint = `${QHM_API_BASE_URL}/api/intercom/conversations/assignment-status`
+  const coinsAwardEndpoint = `${QHM_API_BASE_URL}/api/intercom/coins/award`
+
+  const awardCoinEvents = useCallback(async (events: Array<{
+    conversationId: string
+    waitSeconds: number
+    waitBucket: '5_to_10' | '10_plus'
+    assignedTseId?: string
+    assignedTseName?: string
+  }>) => {
+    if (events.length === 0) return
+
+    try {
+      const response = await fetch(coinsAwardEndpoint, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ conversationEvents: events }),
+      })
+
+      if (!response.ok) {
+        console.warn('[Reso Queue] Failed to award coins:', response.status)
+        return
+      }
+    } catch (error) {
+      console.warn('[Reso Queue] Coin award request failed:', error)
+    }
+  }, [coinsAwardEndpoint])
 
   // Initialize audio context and resume on user interaction (required for browser autoplay policies)
   useEffect(() => {
@@ -689,65 +1226,62 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     }
   }, [])
 
-  // Play buzzer sound when a chat breaches the 10 minute mark
+  // Play sound when a chat breaches the 10 minute mark
+  const buzzerAudioRef = useRef<HTMLAudioElement | null>(null)
+  const lastBuzzerPlayTimeRef = useRef<number>(0)
   const playBuzzerSound = useCallback(async () => {
-    // Don't play sound if audio is disabled
-    if (!isAudioEnabled) {
-      return
-    }
+    if (!isAudioEnabled) return
+
+    const now = Date.now()
+    if (now - lastBuzzerPlayTimeRef.current < 60000) return
+    lastBuzzerPlayTimeRef.current = now
 
     try {
-      // Ensure audio context exists
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      // Reuse or create the Audio element
+      if (!buzzerAudioRef.current) {
+        buzzerAudioRef.current = new Audio('/over_10_min.mp3')
+        buzzerAudioRef.current.volume = 0.3
       }
 
-      const audioContext = audioContextRef.current
-
-      // Resume audio context if suspended (required for browser autoplay policies)
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume()
-      }
-
-      // If still suspended, try to resume again (sometimes needs multiple attempts)
-      if (audioContext.state === 'suspended') {
-        try {
-          await audioContext.resume()
-        } catch (e) {
-          console.warn('[ResoQueueBelt] Could not resume audio context:', e)
-          return
-        }
-      }
-
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      
-      // Create a buzzer-like sound (low frequency square wave)
-      oscillator.type = 'square'
-      oscillator.frequency.setValueAtTime(200, audioContext.currentTime)
-      oscillator.frequency.setValueAtTime(150, audioContext.currentTime + 0.1)
-      oscillator.frequency.setValueAtTime(200, audioContext.currentTime + 0.2)
-      oscillator.frequency.setValueAtTime(150, audioContext.currentTime + 0.3)
-      
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.4)
+      const audio = buzzerAudioRef.current
+      // Reset to start in case it's still playing from a previous trigger
+      audio.currentTime = 0
+      await audio.play()
     } catch (error) {
       console.warn('[ResoQueueBelt] Could not play buzzer sound:', error)
     }
   }, [isAudioEnabled])
 
+  // Play sound when a coin is awarded
+  const coinAudioRef = useRef<HTMLAudioElement | null>(null)
+  const playCoinSound = useCallback(async () => {
+    if (!isAudioEnabled) return
+
+    try {
+      if (!coinAudioRef.current) {
+        coinAudioRef.current = new Audio('/coin_sound.mp3')
+        coinAudioRef.current.volume = 0.5
+      }
+
+      const audio = coinAudioRef.current
+      audio.currentTime = 0
+      await audio.play()
+    } catch (error) {
+      console.warn('[ResoQueueBelt] Could not play coin sound:', error)
+    }
+  }, [isAudioEnabled])
+
   // Play sound when a new chat bubble is added to the conveyer belt
+  const lastNewBubblePlayTimeRef = useRef<number>(0)
   const playNewBubbleSound = useCallback(async () => {
     // Don't play sound if audio is disabled
     if (!isAudioEnabled) {
       return
     }
+
+    const now = Date.now()
+    if (now - lastNewBubblePlayTimeRef.current < 60000) return
+    lastNewBubblePlayTimeRef.current = now
 
     try {
       // Ensure audio context exists
@@ -853,6 +1387,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     previousBreachedIdsRef.current.clear()
     buzzerPlayedIdsRef.current.clear()
     newBubbleSoundPlayedIdsRef.current.clear()
+    queuedCoinAwardIdsRef.current.clear()
     lastResetRef.current = lastBreachResetTimestamp
   }, [lastBreachResetTimestamp])
 
@@ -868,6 +1403,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
 
     const uniqueIds = Array.from(new Set(conversationIds)).filter(Boolean)
     if (uniqueIds.length === 0) return
+    const awardedEvents: Array<{ conversationId: string; waitSeconds: number; waitBucket: '5_to_10' | '10_plus' }> = []
 
     uniqueIds.forEach((conversationId) => {
       checkingIdsRef.current.add(conversationId)
@@ -914,6 +1450,14 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
           removedIdsRef.current.add(conversationId)
           confirmedBreachedIdsRef.current.delete(conversationId)
           previousBreachedIdsRef.current.delete(conversationId)
+          if (!String(conversationId).startsWith('mock-') && !queuedCoinAwardIdsRef.current.has(conversationId)) {
+            queuedCoinAwardIdsRef.current.add(conversationId)
+            awardedEvents.push({
+              conversationId,
+              waitSeconds: 600,
+              waitBucket: '10_plus',
+            })
+          }
           // Remove from exploding if it was exploding
           setExplodingIds(prev => {
             const next = new Set(prev)
@@ -925,11 +1469,14 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     } catch (error) {
       console.error('[Reso Queue] Error fetching assignment status:', error)
     } finally {
+      if (awardedEvents.length > 0) {
+        await awardCoinEvents(awardedEvents)
+      }
       uniqueIds.forEach((conversationId) => {
         checkingIdsRef.current.delete(conversationId)
       })
     }
-  }, [])
+  }, [awardCoinEvents])
 
   useEffect(() => {
     const now = conveyorBeltCurrentTime
@@ -950,7 +1497,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
       
       const waitStartTimestamp = waitingSinceTimestamp || conv.createdTimestamp
       const elapsedSeconds = now - waitStartTimestamp
-      
+
       // Immediately mark as breached when reaching 10 minutes (don't wait for API call)
       if (elapsedSeconds >= 600) {
         // Check if this is a newly breached conversation
@@ -1009,6 +1556,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
       
       const waitStartTimestamp = waitingSinceTimestamp || conv.createdTimestamp
       const elapsedSeconds = now - waitStartTimestamp
+
       // Mark as breached when elapsed time reaches 600 seconds (10 minutes)
       if (elapsedSeconds >= 600) {
         // Check if this is a newly breached conversation
@@ -1045,6 +1593,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
   // Triggers fly-away animation for successfully assigned conversations
   useEffect(() => {
     const currentIds = new Set<string>()
+    const awardCandidates: Array<{ conversationId: string; waitSeconds: number; waitBucket: '5_to_10' | '10_plus' }> = []
     
     // Build set of current conversation IDs and store their position data
     unassignedConvs.forEach((conv) => {
@@ -1068,7 +1617,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
         const idHash = String(convId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
         const staggerOffset = (idHash % 3 === 0) ? 0 : (idHash % 3 === 1) ? -25 : 25
         
-        conversationDataRef.current.set(String(convId), { progress: progressPercent, staggerOffset })
+        conversationDataRef.current.set(String(convId), { progress: progressPercent, staggerOffset, elapsedSeconds })
       }
     })
     
@@ -1087,6 +1636,19 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
       
       // This conversation was assigned before breaching! Trigger fly-away
       const savedData = conversationDataRef.current.get(prevId)
+      const elapsedForAward = savedData?.elapsedSeconds || 0
+      // Award coin when assigned after 30+ seconds (include mock IDs so demo can simulate coin reward)
+      if (elapsedForAward >= 30 && !queuedCoinAwardIdsRef.current.has(prevId)) {
+        queuedCoinAwardIdsRef.current.add(prevId)
+        const mockAssignee = MOCK_ASSIGNEE_BY_CONV[prevId]
+        awardCandidates.push({
+          conversationId: prevId,
+          waitSeconds: Math.floor(elapsedForAward),
+          waitBucket: elapsedForAward >= 600 ? '10_plus' : '5_to_10',
+          ...(mockAssignee && { assignedTseId: mockAssignee.assignedTseId, assignedTseName: mockAssignee.assignedTseName }),
+        })
+      }
+
       console.log('[Reso Queue] Checking fly-away for:', prevId, {
         hasSavedData: !!savedData,
         progress: savedData?.progress,
@@ -1103,11 +1665,13 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
       if (shouldTriggerFlyAway) {
         console.log('[Reso Queue] Conversation assigned, triggering fly-away:', prevId)
         
+        playCoinSound()
+
         // Store the position data for animation
         setFlyingAwayData(prev => new Map(prev).set(prevId, savedData))
         setFlyingAwayIds(prev => new Set(prev).add(prevId))
         
-        // Remove after animation completes (1.5s)
+        // Remove after animation completes (3.5s total: 2s delay + 1.5s animation)
         setTimeout(() => {
           setFlyingAwayIds(prev => {
             const next = new Set(prev)
@@ -1120,7 +1684,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
             return next
           })
           removedIdsRef.current.add(prevId)
-        }, 1500)
+        }, 3500)
       }
     })
     
@@ -1139,10 +1703,47 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
         }
       })
     }
+
+    if (awardCandidates.length > 0) {
+      awardCoinEvents(awardCandidates)
+      // Optimistic update: so podium shows +1 for mock assignees (e.g. Ankita) without waiting for API/refetch
+      awardCandidates.forEach((e) => {
+        const tseName = (e as { assignedTseName?: string }).assignedTseName
+        if (tseName) {
+          window.dispatchEvent(new CustomEvent('coin-awarded', { detail: { tseName, waitBucket: e.waitBucket } }))
+        }
+      })
+    }
     
     // Update previous IDs for next comparison
     previousUnassignedIdsRef.current = currentIds
-  }, [unassignedConvs, conveyorBeltCurrentTime, flyingAwayIds, explodingIds, playNewBubbleSound])
+  }, [
+    unassignedConvs,
+    conveyorBeltCurrentTime,
+    flyingAwayIds,
+    explodingIds,
+    playNewBubbleSound,
+    playCoinSound,
+    awardCoinEvents
+  ])
+
+  const confirmedBreachedConvs = useMemo(() => {
+    return unassignedConvs.filter((conv) => {
+      const convId = conv.id || conv.conversation_id
+      if (!convId) return false
+      if (removedIdsRef.current.has(convId)) return false
+      if (!confirmedBreachedIdsRef.current.has(convId)) return false
+      const createdTimestamp = conv.createdTimestamp
+      if (!createdTimestamp) return false
+      // Skip timestamp filters for mock conversations
+      if (String(convId).startsWith('mock-')) return true
+      // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
+      if (createdTimestamp < lastBreachResetTimestamp) return false
+      if (createdTimestamp >= cutoffTimestamp) return false
+      return true
+    })
+  }, [unassignedConvs, conveyorBeltCurrentTime, lastBreachResetTimestamp, cutoffTimestamp])
+  const breachedCount = confirmedBreachedConvs.length
 
   return (
     <>
@@ -1495,8 +2096,9 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
             
             const { progress, staggerOffset } = data
             
-            // Use green SVG for successfully assigned
-            const svgUrl = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769161765/huddle_logo_1_xlram0.svg'
+            // Always use coin GIF for all assigned chats
+            const flyAwayImageUrl = 'https://res.cloudinary.com/doznvxtja/image/upload/v1771896146/q-coin_spin_k0nqod.gif'
+            const flyAwaySize = '100px'
             
             return (
               <div
@@ -1513,7 +2115,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
                   justifyContent: 'center',
                   zIndex: 300,
                   pointerEvents: 'none',
-                  animation: 'fly-away 1.5s ease-out forwards'
+                  animation: 'fly-away 1.5s ease-out 2s forwards'
                 }}
               >
                 {/* Trail particles */}
@@ -1523,7 +2125,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
                       key={i}
                       className="trail-particle"
                       style={{
-                        animationDelay: `${i * 0.08}s`,
+                        animationDelay: `${2 + i * 0.08}s`,
                         opacity: 1 - (i * 0.2)
                       }}
                     />
@@ -1531,145 +2133,123 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
                 </div>
                 <div style={{
                   position: 'relative',
-                  width: '80px',
-                  height: '80px',
+                  width: flyAwaySize,
+                  height: flyAwaySize,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
                   <img 
-                    src={svgUrl}
+                    src={flyAwayImageUrl}
                     alt="Assigned"
                     style={{
                       width: '100%',
                       height: '100%',
                       objectFit: 'contain',
-                      filter: 'drop-shadow(0 0 8px rgba(16, 185, 129, 0.6))'
+                      borderRadius: '50%'
                     }}
                   />
-                  {/* Checkmark overlay */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    fontSize: '20px',
-                    fontWeight: 700,
-                    color: '#10b981',
-                    textShadow: '0 0 4px rgba(255,255,255,0.9)'
-                  }}>
-                    ✓
-                  </div>
                 </div>
               </div>
             )
           })}
           
-          {/* Breached Section - HIDDEN FOR NOW */}
-          {false && (() => {
-            // TEMPORARILY UNHIDDEN FOR TESTING - Hide breached section during cutoff period (2 AM UTC to 10 AM UTC)
-            // if (!isInCountingWindow) return null
+          {/* Breached stack to the right of the conveyor belt */}
+          <div
+            onClick={() => breachedCount > 0 && setShowBreachedModal(true)}
+            style={{
+              position: 'absolute',
+              right: '0px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 20,
+              width: '96px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: breachedCount > 0 ? 'pointer' : 'default',
+              userSelect: 'none'
+            }}
+            title={
+              breachedCount > 0
+                ? `${breachedCount} chats are 10+ minutes and still unassigned (${chatsTodayCount} chats today). Click to view.`
+                : 'No chats are currently 10+ minutes and unassigned.'
+            }
+          >
+            <div style={{ position: 'relative', width: '56px', height: '46px' }}>
+              {[0, 1, 2].map((layer) => {
+                const visibleLayers = Math.min(breachedCount, 3)
+                const isVisible = layer < visibleLayers
+                return (
+                  <div
+                    key={`breached-stack-${layer}`}
+                    style={{
+                      position: 'absolute',
+                      left: `${layer * 8}px`,
+                      top: `${(2 - layer) * 4}px`,
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '50%',
+                      backgroundColor: breachedCount === 0
+                        ? '#ffffff'
+                        : (isVisible ? '#fd8789' : 'rgba(253, 135, 137, 0.15)'),
+                      border: breachedCount === 0
+                        ? '2px solid #10b981'
+                        : (isVisible ? '2px solid #ffffff' : '1px dashed rgba(253, 135, 137, 0.35)'),
+                      boxShadow: breachedCount === 0
+                        ? '0 0 10px rgba(16, 185, 129, 0.25)'
+                        : (isVisible ? '0 0 12px rgba(253, 135, 137, 0.45)' : 'none'),
+                      transition: 'all 0.2s ease'
+                    }}
+                  />
+                )
+              })}
 
-            const confirmedBreachedConvs = unassignedConvs.filter((conv) => {
-              const convId = conv.id || conv.conversation_id
-              if (!convId) return false
-              if (removedIdsRef.current.has(convId)) return false
-              if (!confirmedBreachedIdsRef.current.has(convId)) return false
-              const createdTimestamp = conv.createdTimestamp
-              if (!createdTimestamp) return false
-              // Skip timestamp filters for mock conversations
-              if (String(convId).startsWith('mock-')) return true
-              // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
-              if (createdTimestamp < lastBreachResetTimestamp) return false
-              if (createdTimestamp >= cutoffTimestamp) return false
-              return true
-            })
+              <div style={{
+                position: 'absolute',
+                right: '-10px',
+                top: '-12px',
+                minWidth: '42px',
+                height: '42px',
+                borderRadius: '999px',
+                backgroundColor: breachedCount === 0 ? '#ffffff' : '#d84c4c',
+                color: breachedCount === 0 ? '#10b981' : '#ffffff',
+                fontSize: '26px',
+                fontWeight: 900,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 12px',
+                border: breachedCount === 0 ? '3px solid #10b981' : '3px solid #ffffff',
+                boxShadow: breachedCount === 0
+                  ? '0 3px 12px rgba(16,185,129,0.25)'
+                  : '0 3px 12px rgba(0,0,0,0.35)',
+                lineHeight: 1,
+              }}>
+                {breachedCount}
+              </div>
+            </div>
 
-            // Calculate percentage of conversations that breached using Chats Today as denominator
-            const breachedPercentage = chatsTodayCount > 0 
-              ? Math.round((confirmedBreachedConvs.length / chatsTodayCount) * 100)
-              : 0
-
-            // Color based on breached status - green when 0%, red when > 0%
-            const breachedColor = confirmedBreachedConvs.length === 0 ? '#10b981' : '#d84c4c'
-
-            return (
-              <>
-                {/* Breached percentage - Right Side */}
-                <div
-                  onClick={() => confirmedBreachedConvs.length > 0 && setShowBreachedModal(true)}
-                  style={{
-                    position: 'absolute',
-                    right: '0px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    zIndex: 15,
-                    cursor: confirmedBreachedConvs.length > 0 ? 'pointer' : 'default',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '8px 12px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (confirmedBreachedConvs.length > 0) {
-                      e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
-                  }}
-                  title={confirmedBreachedConvs.length > 0 
-                    ? `${breachedPercentage}% breached (${confirmedBreachedConvs.length} of ${chatsTodayCount} chats today) - Click to view`
-                    : `0% breached - No 10+ min waits today!`
-                  }
-                >
-                  {/* Breached percentage */}
-                  <div style={{
-                    fontSize: '24px',
-                    fontWeight: 800,
-                    color: breachedColor,
-                    textAlign: 'center',
-                    lineHeight: '1'
-                  }}>
-                    {breachedPercentage}%
-                  </div>
-                  {/* Label */}
-                  <div style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: breachedColor,
-                    textAlign: 'center',
-                    lineHeight: '1.2',
-                    marginTop: '4px',
-                    maxWidth: '80px'
-                  }}>
-                    {confirmedBreachedConvs.length}/{chatsTodayCount} 10+ min waits today
-                  </div>
-                </div>
-              </>
-            )
-          })()}
+            <div style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              lineHeight: 1.2,
+              color: breachedCount > 0 ? '#fd8789' : '#10b981',
+              textAlign: 'center',
+              maxWidth: '90px'
+            }}>
+              10+ min unassigned
+            </div>
+          </div>
         </div>
+
       </div>
       
       {/* Breached Conversations Modal */}
       {showBreachedModal && (() => {
-        const breachedConvs = unassignedConvs.filter((conv) => {
-          const convId = conv.id || conv.conversation_id
-          if (!convId) return false
-          if (removedIdsRef.current.has(convId)) return false
-          if (!confirmedBreachedIdsRef.current.has(convId)) return false
-          const createdTimestamp = conv.createdTimestamp
-          if (!createdTimestamp) return false
-          // Skip timestamp filters for mock conversations
-          if (String(convId).startsWith('mock-')) return true
-          // Must be after reset (10 AM UTC) and before cutoff (2 AM UTC next day)
-          if (createdTimestamp < lastBreachResetTimestamp) return false
-          if (createdTimestamp >= cutoffTimestamp) return false
-          return true
-        }).map((conv) => {
+        const breachedConvs = confirmedBreachedConvs.map((conv) => {
           const createdTimestamp = conv.createdTimestamp
           const elapsedSeconds = conveyorBeltCurrentTime - createdTimestamp
           const waitTimeMinutes = Math.floor(elapsedSeconds / 60)
@@ -2048,6 +2628,9 @@ export function AvailabilityPlugin() {
   // Audio enabled state management (always defaults to disabled, no persistence)
   const [isAudioEnabled, setIsAudioEnabled] = useState(false)
 
+  // Live TSE counts from the AvailableTSEsTable component
+  const [liveTseCounts, setLiveTseCounts] = useState({ active: 0, away: 0 })
+
   const toggleAudio = () => {
     setIsAudioEnabled(prev => !prev)
   }
@@ -2061,12 +2644,11 @@ export function AvailabilityPlugin() {
   const config = useConfig()
   
   // Get the element IDs from config
-  const sourceElementId = config.source as string
+  const sourceElementId = config['Status Source'] as string
   const scheduleElementId = config.scheduleSource as string
-  const chatsElementId = config.chatsSource as string
+  const chatsPerHourElementId = config.chatsPerHourSource as string
   const oooElementId = config.oooSource as string
   const officeHoursElementId = config.officeHoursSource as string
-  const incidentsElementId = config.incidentsSource as string
   const activeTSEsElementId = config.activeTSEsSource as string
   const awayTSEsElementId = config.awayTSEsSource as string
   const tseConversationElementId = config.tseConversationSource as string
@@ -2081,28 +2663,28 @@ export function AvailabilityPlugin() {
   // Get column mappings from Sigma using actual element IDs
   const columns = useElementColumns(sourceElementId)
   const scheduleColumns = useElementColumns(scheduleElementId)
-  const chatsColumns = useElementColumns(chatsElementId)
   const oooColumns = useElementColumns(oooElementId)
   // const officeHoursColumns = useElementColumns(officeHoursElementId) // Unused but kept for future use
-  const incidentsColumns = useElementColumns(incidentsElementId)
   const activeTSEsColumns = useElementColumns(activeTSEsElementId)
   const awayTSEsColumns = useElementColumns(awayTSEsElementId)
   const tseConversationColumns = useElementColumns(tseConversationElementId)
-  // IR columns not needed - we get column ID directly from config.irAdjustedIrS
   
   // Get actual data from the connected Sigma worksheets using element IDs
   // Note: useElementData may return undefined if element ID is undefined, or empty object {} if element is connected but has no data
+  // IMPORTANT: Hooks must be called unconditionally (Rules of Hooks). Never wrap useElementData in a conditional.
   const sigmaData = useElementData(sourceElementId)
   const scheduleData = useElementData(scheduleElementId)
-  const chatsData = useElementData(chatsElementId)
+  const chatsPerHourSigmaDataRaw = useElementData(chatsPerHourElementId)
+  const chatsPerHourSigmaData = chatsPerHourElementId ? chatsPerHourSigmaDataRaw : undefined
   const oooData = useElementData(oooElementId)
   const officeHoursData = useElementData(officeHoursElementId)
-  const incidentsData = useElementData(incidentsElementId)
   
-  // Only call useElementData if element ID exists to avoid potential issues
-  const activeTSEsData = activeTSEsElementId ? useElementData(activeTSEsElementId) : undefined
-  const awayTSEsData = awayTSEsElementId ? useElementData(awayTSEsElementId) : undefined
-  const tseConversationData = tseConversationElementId ? useElementData(tseConversationElementId) : undefined
+  const activeTSEsDataRaw = useElementData(activeTSEsElementId)
+  const activeTSEsData = activeTSEsElementId ? activeTSEsDataRaw : undefined
+  const awayTSEsDataRaw = useElementData(awayTSEsElementId)
+  const awayTSEsData = awayTSEsElementId ? awayTSEsDataRaw : undefined
+  const tseConversationDataRaw = useElementData(tseConversationElementId)
+  const tseConversationData = tseConversationElementId ? tseConversationDataRaw : undefined
   
   // Debug: Log what useElementData returns immediately
   console.log('🔍 [AvailabilityPlugin] useElementData results:')
@@ -2228,7 +2810,7 @@ export function AvailabilityPlugin() {
   // State to hold data from direct subscriptions
   const [directScheduleData, setDirectScheduleData] = useState<Record<string, any[]>>({})
   const [directSourceData, setDirectSourceData] = useState<Record<string, any[]>>({})
-  const [directChatsData, setDirectChatsData] = useState<Record<string, any[]>>({})
+  const [directChatsPerHourData, setDirectChatsPerHourData] = useState<Record<string, any[]>>({})
   const [directOooData, setDirectOooData] = useState<Record<string, any[]>>({})
   
   // Flag to track if effect ran
@@ -2326,18 +2908,48 @@ export function AvailabilityPlugin() {
     
     if (!isLocalhost) return
     
-    // SCENARIO 2: Assign mock-2008 (second bubble) to fly away 5 seconds after component starts
+    // SCENARIO 2:
+    // 1) Assign one pre-breach bubble quickly to show fly-away behavior.
+    // 2) Assign one already-breached bubble later so the 10+ min stack count decreases.
     if (MOCK_SCENARIO === 2) {
-      // Assign mock-2008 after 5 seconds
-      const timeout = setTimeout(() => {
+      // Assign mock-2003 after 4 seconds – chat just over 5 min gets "assigned", TSE gets coin (sound + award)
+      const coinDemoTimeout = setTimeout(() => {
+        if (!assignedMockIdsRef.current.has('mock-2003')) {
+          console.log('[Mock] 🪙 Assigning mock-2003 (5.25 min wait) – simulates chat crossing 5 min then assigned, TSE rewarded with coin')
+          setAssignedMockIds(prev => new Set(prev).add('mock-2003'))
+        }
+      }, 4000)
+
+      // Assign mock-2010 after 6 seconds – assigned to Ankita, coin path (5_to_10, >5 min)
+      const ankitaCoinTimeout = setTimeout(() => {
+        if (!assignedMockIdsRef.current.has('mock-2010')) {
+          console.log('[Mock] 🪙 Assigning mock-2010 (8.5 min wait) to Ankita – coin path')
+          setAssignedMockIds(prev => new Set(prev).add('mock-2010'))
+        }
+      }, 6000)
+
+      // Assign mock-2008 after 10 seconds (pre-breach fly-away)
+      const preBreachTimeout = setTimeout(() => {
         if (!assignedMockIdsRef.current.has('mock-2008')) {
-          console.log('[Mock] ✈️ Assigning mock-2008 (7.8 min wait) - 5 seconds after start')
+          console.log('[Mock] ✈️ Assigning mock-2008 (7.8 min wait) - 10 seconds after start')
           setAssignedMockIds(prev => new Set(prev).add('mock-2008'))
         }
-      }, 5000)
+      }, 10000)
+
+      // Assign mock-2011 after 45 seconds (starts at 9.5m, breaches quickly, then gets removed)
+      // This demonstrates the stacked 10+ min badge decreasing.
+      const breachedTimeout = setTimeout(() => {
+        if (!assignedMockIdsRef.current.has('mock-2011')) {
+          console.log('[Mock] ✅ Removing breached chat mock-2011 - 45 seconds after start')
+          setAssignedMockIds(prev => new Set(prev).add('mock-2011'))
+        }
+      }, 45000)
       
       return () => {
-        clearTimeout(timeout)
+        clearTimeout(coinDemoTimeout)
+        clearTimeout(ankitaCoinTimeout)
+        clearTimeout(preBreachTimeout)
+        clearTimeout(breachedTimeout)
       }
     }
     
@@ -2416,11 +3028,20 @@ export function AvailabilityPlugin() {
     loading: intercomLoading,
     error: intercomError,
     lastUpdated: intercomLastUpdated,
-    // refresh: refreshIntercomData, // Available for manual refresh if needed
   } = useIntercomData({
     skipClosed: true, // Skip closed conversations for faster loading - we get counts from daily-metrics endpoint
     autoRefresh: true,
-    refreshInterval: 120000, // 2 minutes - matches queue-health-monitor
+    refreshInterval: 30000, // 30 seconds for fresher avatar/status updates
+  })
+
+  // Closed-only view so we can compute "closed today" with OOO-aware filtering.
+  const {
+    conversations: intercomClosedTodayConversations,
+    teamMembers: intercomClosedTodayTeamMembers,
+  } = useIntercomData({
+    closedOnly: true,
+    autoRefresh: true,
+    refreshInterval: 30000,
   })
   
   // =================================================================
@@ -2435,6 +3056,19 @@ export function AvailabilityPlugin() {
     autoRefresh: true,
     refreshInterval: 60000, // 1 minute - faster refresh for real-time counts
   })
+
+  // Real-time chats-by-hour from Intercom API (ET hours) — refreshes every minute
+  const {
+    chatsByHour: apiChatsByHour,
+  } = useChatsByHour({
+    autoRefresh: true,
+    refreshInterval: 60000, // 1 minute - same cadence as daily metrics
+  })
+
+  // Webhook-derived away statuses (real-time when admins change status in Intercom)
+  const { data: webhookAwayStatus } = useWebhookAwayStatus(true)
+
+  // Auth is now handled server-side via INTERCOM_TOKEN env var — no OAuth popup needed.
   
   // Debug: Log when daily metrics change
   console.log('📊 [Daily Metrics] Data received:', {
@@ -2505,18 +3139,70 @@ export function AvailabilityPlugin() {
     'Holly',
     'Holly Coxon',
     'Stephen',
+    'Stephen Skalamera',
     'Grace',
+    'Grace Liu',
+    'Grace Sanford',
     'Zen',
+    'Zen Lee',
     'Chetana',
     'Chetana Shinde',
     'svc-prd-tse-intercom SVC',
     'TSE 6519361',
     'Zen Junior',
+    'Prerit',
+    'Prerit Sachdeva',
+    'Sanyam',
+    'Sanyam Khurana',
+    'Nick',
+    'Nick Clancey',
   ]
+
+  // Build OOO name set from scheduleSource.daily_ooo-style control.
+  // Keep this narrowly scoped to the schedule column so we don't accidentally treat
+  // an entire OOO source table as "all OOO" when status metadata is missing.
+  const oooTseSet = useMemo(() => {
+    const set = new Set<string>()
+
+    const addName = (value: unknown) => {
+      if (typeof value !== 'string') return
+      const cleaned = value.trim().toLowerCase()
+      if (!cleaned) return
+      set.add(cleaned)
+      const first = cleaned.split(' ')[0]
+      if (first && first !== cleaned) set.add(first)
+    }
+
+    const effectiveScheduleData = Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData
+    const scheduleTSECol = config.scheduleTSE as string
+    const scheduleOOOCol = config.scheduleOOO as string
+
+    // 1) daily_ooo-style control mapped via scheduleOOO column.
+    if (effectiveScheduleData && scheduleTSECol && scheduleOOOCol) {
+      const names = effectiveScheduleData[scheduleTSECol] as string[] | undefined
+      const statuses = effectiveScheduleData[scheduleOOOCol] as string[] | undefined
+      if (names && statuses) {
+        names.forEach((name, idx) => {
+          const status = statuses[idx]
+          if (typeof status === 'string' && status.trim().toLowerCase() === 'yes') {
+            addName(name)
+          }
+        })
+      }
+    }
+
+    return set
+  }, [
+    config.scheduleTSE,
+    config.scheduleOOO,
+    directScheduleData,
+    scheduleData,
+  ])
   
   const totalChatsTakenToday = useMemo(() => {
     console.log('[AvailabilityPlugin] Calculating totalChatsTakenToday...')
     console.log('[AvailabilityPlugin] intercomConversations.length:', intercomConversations.length)
+    console.log('[AvailabilityPlugin] intercomClosedTodayConversations.length:', intercomClosedTodayConversations.length)
     console.log('[AvailabilityPlugin] intercomTeamMembers.length:', intercomTeamMembers.length)
     
     // On localhost, return mock data for demo purposes
@@ -2525,7 +3211,7 @@ export function AvailabilityPlugin() {
       window.location.hostname === '127.0.0.1'
     )
     
-    if (!intercomConversations.length || !intercomTeamMembers.length) {
+    if (!intercomTeamMembers.length) {
       if (isLocalhost) {
         console.log('[AvailabilityPlugin] Localhost detected, returning mock chats today: 47')
         return 47 // Mock value for localhost demo
@@ -2534,34 +3220,53 @@ export function AvailabilityPlugin() {
       return 0
     }
     
-    // Helper to check if timestamp is today (PT timezone)
+    // Build a de-duplicated conversation set across open/snoozed + closed
+    // so chats-today is status-agnostic and matches the table logic.
+    const conversationsForCounts: any[] = []
+    const seenConversationIds = new Set<string>()
+    const allConversations = [...intercomConversations, ...intercomClosedTodayConversations]
+
+    allConversations.forEach((conv) => {
+      const uniqueId = String(conv.conversation_id || conv.id || '')
+      if (!uniqueId || seenConversationIds.has(uniqueId)) return
+      seenConversationIds.add(uniqueId)
+      conversationsForCounts.push(conv)
+    })
+
+    if (!conversationsForCounts.length) {
+      if (isLocalhost) {
+        console.log('[AvailabilityPlugin] Localhost detected, returning mock chats today: 47')
+        return 47
+      }
+      console.log('[AvailabilityPlugin] No conversations available, returning 0')
+      return 0
+    }
+
+    // Helper to check if timestamp is today (UTC timezone)
     const isToday = (timestamp: number | undefined): boolean => {
       if (!timestamp) return false
       const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000
       const date = new Date(timestampMs)
       const now = new Date()
-      const ptFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Los_Angeles',
+      const utcFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'UTC',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit'
       })
-      return ptFormatter.format(now) === ptFormatter.format(date)
+      return utcFormatter.format(now) === utcFormatter.format(date)
     }
     
-    // Check if a conversation was "taken" today (created today AND has an admin reply today)
+    // Match table behavior: count any conversation whose FIRST admin reply is today (UTC),
+    // regardless of current conversation status.
     const isChatTakenToday = (conv: any): boolean => {
-      const createdToday = isToday(conv.created_at)
-      if (!createdToday) return false
-      
-      const adminReplyAt = conv.statistics?.first_admin_reply_at || conv.statistics?.last_admin_reply_at
-      return isToday(adminReplyAt)
+      return isToday(conv.statistics?.first_admin_reply_at)
     }
     
     // Group by TSE and sum chats taken (matching TSEConversationTable logic)
     const tseMap = new Map<string, { name: string, count: number }>()
     
-    intercomConversations.forEach(conv => {
+    conversationsForCounts.forEach(conv => {
       const assigneeId = conv.admin_assignee_id || 
         (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
       
@@ -2575,6 +3280,9 @@ export function AvailabilityPlugin() {
       
       // Skip excluded TSEs
       if (EXCLUDED_TSE_NAMES.includes(name)) return
+      const cleanName = name.toLowerCase()
+      const firstName = cleanName.split(' ')[0]
+      if (oooTseSet.has(cleanName) || oooTseSet.has(firstName)) return
       
       // Initialize TSE entry if not exists
       if (!tseMap.has(idStr)) {
@@ -2599,9 +3307,9 @@ export function AvailabilityPlugin() {
     // Sum all chats taken across all TSEs
     const totalCount = Array.from(tseMap.values()).reduce((sum, data) => sum + data.count, 0)
     
-    console.log('[AvailabilityPlugin] Total chats taken today (from table data):', totalCount)
+    console.log('[AvailabilityPlugin] Total chats taken today (UTC first reply, all statuses):', totalCount)
     return totalCount
-  }, [intercomConversations, intercomTeamMembers])
+  }, [intercomConversations, intercomClosedTodayConversations, intercomTeamMembers, oooTseSet])
   
   // =================================================================
   // TSE CONVERSATION DATA (for capacity calculation)
@@ -2693,7 +3401,7 @@ export function AvailabilityPlugin() {
       window.location.hostname === '127.0.0.1'
     )
     
-    if (!intercomConversations.length) {
+    if (!intercomClosedTodayConversations.length) {
       if (isLocalhost) {
         console.log('[AvailabilityPlugin] Localhost detected, returning mock closed today: 32')
         return 32 // Mock value for localhost demo
@@ -2717,19 +3425,45 @@ export function AvailabilityPlugin() {
     }
     
     // Count ALL conversations closed today (regardless of assignee)
-    const closedCount = intercomConversations.filter(conv => {
+    const teamMemberLookup = new Map<string, string>()
+    const allTeamMembers = [...intercomTeamMembers, ...intercomClosedTodayTeamMembers]
+    allTeamMembers.forEach((member) => {
+      teamMemberLookup.set(String(member.id), member.name || '')
+    })
+
+    const closedCount = intercomClosedTodayConversations.filter(conv => {
       const state = (conv.state || '').toLowerCase()
       if (state !== 'closed') return false
       
       const closedAt = conv.closed_at
       if (!closedAt) return false
-      
-      return isToday(closedAt)
+
+      if (!isToday(closedAt)) return false
+
+      const assigneeId = conv.admin_assignee_id ||
+        (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
+      if (!assigneeId) return true
+
+      const assigneeName = (teamMemberLookup.get(String(assigneeId)) || '').trim().toLowerCase()
+      const firstName = assigneeName.split(' ')[0]
+      if (assigneeName && (oooTseSet.has(assigneeName) || oooTseSet.has(firstName))) {
+        return false
+      }
+
+      return true
     }).length
     
     console.log('[AvailabilityPlugin] Total closed today (all conversations):', closedCount)
     return closedCount
-  }, [intercomConversations])
+  }, [intercomClosedTodayConversations, intercomTeamMembers, intercomClosedTodayTeamMembers, oooTseSet])
+
+  const shouldUseOooAwareCounts = oooTseSet.size > 0
+  const bannerChatsToday = shouldUseOooAwareCounts
+    ? totalChatsTakenToday
+    : (dailyMetrics?.chatsToday ?? totalChatsTakenToday)
+  const bannerClosedToday = shouldUseOooAwareCounts
+    ? totalClosedToday
+    : (dailyMetrics?.closedToday ?? totalClosedToday)
   
   // =================================================================
   // MEDIAN INITIAL RESPONSE TIME (calculated from Intercom conversations API)
@@ -2837,25 +3571,58 @@ export function AvailabilityPlugin() {
         console.log('[AvailabilityPlugin] Historical metrics received:', metrics.length, 'records')
         
         if (metrics.length > 0) {
-          // Metrics are ordered by date DESC
-          // Find the most recent record with meaningful data (skip weekends/low-activity days)
-          // A "meaningful" day should have at least 50 conversations
-          const MIN_CONVERSATIONS_THRESHOLD = 50
-          
-          const meaningfulMetric = metrics.find(
-            (m: { totalConversations?: number }) => (m.totalConversations ?? 0) >= MIN_CONVERSATIONS_THRESHOLD
-          ) || metrics[0] // Fallback to most recent if none meet threshold
-          
-          console.log('[AvailabilityPlugin] Selected metric (skipping low-activity days):', {
-            date: meaningfulMetric.date,
-            totalConversations: meaningfulMetric.totalConversations,
-            totalClosed: meaningfulMetric.totalClosed
+          const toPtDateKey = (date: Date) => {
+            const formatter = new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'America/Los_Angeles',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+            })
+            return formatter.format(date) // YYYY-MM-DD
+          }
+
+          const todayPt = new Date()
+          const yesterdayPt = new Date(todayPt)
+          yesterdayPt.setDate(yesterdayPt.getDate() - 1)
+          const weekAgoPt = new Date(todayPt)
+          weekAgoPt.setDate(weekAgoPt.getDate() - 7)
+
+          const yesterdayKey = toPtDateKey(yesterdayPt)
+          const weekAgoKey = toPtDateKey(weekAgoPt)
+
+          const metricsByDate = new Map<string, any>()
+          metrics.forEach((m: any) => {
+            if (m?.date) metricsByDate.set(m.date, m)
           })
-          
+
+          // Primary: exact previous day.
+          // Fallback: nearest prior record (avoid showing stale weeks-old values when possible).
+          const sortedByDateDesc = [...metrics]
+            .filter((m: any) => typeof m?.date === 'string')
+            .sort((a: any, b: any) => String(b.date).localeCompare(String(a.date)))
+
+          const yesterdayMetric =
+            metricsByDate.get(yesterdayKey) ||
+            sortedByDateDesc.find((m: any) => String(m.date) < yesterdayKey) ||
+            null
+
+          const weekAgoMetric =
+            metricsByDate.get(weekAgoKey) ||
+            sortedByDateDesc.find((m: any) => String(m.date) <= weekAgoKey) ||
+            null
+
+          console.log('[AvailabilityPlugin] Selected historical metrics:', {
+            yesterdayKey,
+            selectedYesterday: yesterdayMetric?.date,
+            selectedWeekAgo: weekAgoMetric?.date,
+            yesterdayChats: yesterdayMetric?.totalConversations,
+            yesterdayClosed: yesterdayMetric?.totalClosed,
+          })
+
           setHistoricalMetrics({
-            yesterdayChats: meaningfulMetric.totalConversations ?? null,
-            yesterdayClosed: meaningfulMetric.totalClosed ?? null,
-            weekAgoChats: metrics.length > 7 ? metrics[7]?.totalConversations ?? null : null,
+            yesterdayChats: yesterdayMetric?.totalConversations ?? null,
+            yesterdayClosed: yesterdayMetric?.totalClosed ?? null,
+            weekAgoChats: weekAgoMetric?.totalConversations ?? null,
             loading: false
           })
         } else {
@@ -2935,6 +3702,15 @@ export function AvailabilityPlugin() {
       minute: '2-digit',
       hour12: true 
     })
+  }
+
+  // @ts-ignore
+  const formatAgeSeconds = (seconds: number | null): string => {
+    if (seconds === null || Number.isNaN(seconds)) return 'n/a'
+    if (seconds < 60) return `${seconds}s`
+    const mins = Math.floor(seconds / 60)
+    const rem = seconds % 60
+    return rem > 0 ? `${mins}m ${rem}s` : `${mins}m`
   }
 
   
@@ -3050,7 +3826,6 @@ export function AvailabilityPlugin() {
     console.log('⚡ useEffect FIRED!')
     console.log('  scheduleElementId:', scheduleElementId)
     console.log('  sourceElementId:', sourceElementId)
-    console.log('  chatsElementId:', chatsElementId)
     console.log('  oooElementId:', oooElementId)
     setEffectRan(true)
     
@@ -3059,7 +3834,7 @@ export function AvailabilityPlugin() {
       return
     }
     
-    if (!scheduleElementId && !sourceElementId && !chatsElementId && !oooElementId) {
+    if (!scheduleElementId && !sourceElementId && !oooElementId) {
       console.log('[Sigma Client] No element IDs yet, skipping subscriptions')
       return
     }
@@ -3068,7 +3843,7 @@ export function AvailabilityPlugin() {
     
     let unsubSchedule: (() => void) | undefined
     let unsubSource: (() => void) | undefined
-    let unsubChats: (() => void) | undefined
+    let unsubChatsPerHour: (() => void) | undefined
     let unsubOoo: (() => void) | undefined
     
     if (scheduleElementId) {
@@ -3103,19 +3878,18 @@ export function AvailabilityPlugin() {
       }
     }
     
-    if (chatsElementId) {
+    if (chatsPerHourElementId) {
       try {
-        console.log('[Sigma Client] Subscribing to chats element:', chatsElementId)
-        unsubChats = client.elements.subscribeToElementData(chatsElementId, (data) => {
-          console.log('[Sigma Client] ✓ Received chats data update:', Object.keys(data))
-          setDirectChatsData(data)
-          // Update timestamp when upstream data changes
+        console.log('[Sigma Client] Subscribing to chatsPerHour element:', chatsPerHourElementId)
+        unsubChatsPerHour = client.elements.subscribeToElementData(chatsPerHourElementId, (data) => {
+          console.log('[Sigma Client] ✓ Received chatsPerHour data update:', Object.keys(data))
+          setDirectChatsPerHourData(data)
           setLastUpdated(new Date())
-          console.log('[Upstream Refresh] Chats data updated, refreshing timestamp')
+          console.log('[Upstream Refresh] ChatsPerHour data updated, refreshing timestamp')
         })
-        console.log('[Sigma Client] ✓ Chats subscription created')
+        console.log('[Sigma Client] ✓ ChatsPerHour subscription created')
       } catch (e) {
-        console.error('[Sigma Client] ❌ Error subscribing to chats:', e)
+        console.error('[Sigma Client] ❌ Error subscribing to chatsPerHour:', e)
       }
     }
     
@@ -3138,10 +3912,10 @@ export function AvailabilityPlugin() {
     return () => {
       unsubSchedule?.()
       unsubSource?.()
-      unsubChats?.()
+      unsubChatsPerHour?.()
       unsubOoo?.()
     }
-  }, [scheduleElementId, sourceElementId, chatsElementId, oooElementId, client])
+  }, [scheduleElementId, sourceElementId, chatsPerHourElementId, oooElementId, client])
   
   // Log effect status
   console.log('[Effect Status] effectRan:', effectRan)
@@ -3150,15 +3924,12 @@ export function AvailabilityPlugin() {
   console.log('=== SIGMA PLUGIN DEBUG ===')
   console.log('[Config] Full config object:', JSON.stringify(config, null, 2))
   console.log('[Config] scheduleSource value:', config.scheduleSource)
-  console.log('[Config] source value:', config.source)
+  console.log('[Config] Status Source value:', config['Status Source'])
   console.log('[Columns] source columns:', columns)
   console.log('[Columns] scheduleSource columns:', scheduleColumns)
-  console.log('[Columns] chatsSource columns:', chatsColumns)
   console.log('[Columns] oooSource columns:', oooColumns)
   console.log('[Data] sigmaData:', sigmaData, 'keys:', Object.keys(sigmaData || {}))
   console.log('[Data] scheduleData:', scheduleData, 'keys:', Object.keys(scheduleData || {}))
-  console.log('[Data] chatsData:', chatsData, 'keys:', Object.keys(chatsData || {}))
-  console.log('[Data] directChatsData:', directChatsData, 'keys:', Object.keys(directChatsData || {}))
   console.log('[Data] oooData:', oooData, 'keys:', Object.keys(oooData || {}))
   console.log('[Data] directOooData:', directOooData, 'keys:', Object.keys(directOooData || {}))
   
@@ -3204,122 +3975,129 @@ export function AvailabilityPlugin() {
   console.log('[Auto Intensity] Configuration:', {
     autoIntensityEnabled,
     autoIntensityConfig: config.autoIntensity,
-    chatsElementId,
     defaultIntensity,
   })
   
-  // Debug: Log chats data (moved after effectiveChatsData calculation)
-  
   // Use direct subscription data if available, fall back to hook data
-  const effectiveChatsData = Object.keys(directChatsData).length > 0 ? directChatsData : chatsData
-  
-  // Calculate row count from chats data
-  const chatsRowCount = useMemo(() => {
-    console.log('[Chats Row Count] Calculating...')
-    console.log('[Chats Row Count] effectiveChatsData present:', !!effectiveChatsData)
-    
-    if (!effectiveChatsData) {
-      console.log('[Chats Row Count] No data, returning 0')
-      return 0
-    }
-    
-    const keys = Object.keys(effectiveChatsData)
-    console.log('[Chats Row Count] Keys found:', keys)
-    
-    // Priority: Use the explicitly configured trigger column
-    const triggerCol = config.chatsTriggerColumn as string
-    if (triggerCol && effectiveChatsData[triggerCol]) {
-       const count = effectiveChatsData[triggerCol].length
-       console.log('[Chats Row Count] Using trigger column:', triggerCol, 'Count:', count)
-       return count
-    }
-    
-    if (keys.length === 0) {
-      console.log('[Chats Row Count] No keys, returning 0')
-      return 0
-    }
-    
-    const firstColumnKey = keys[0]
-    const count = effectiveChatsData[firstColumnKey]?.length || 0
-    console.log('[Chats Row Count] First column:', firstColumnKey, 'Length:', count)
-    return count
-  }, [effectiveChatsData])
-  
-  // Debug: Log column names for verification
-  useEffect(() => {
-    if (chatsColumns) {
-      const mapping = Object.entries(chatsColumns).reduce((acc, [id, col]) => {
-        acc[id] = col.name
-        return acc
-      }, {} as Record<string, string>)
-      console.log('[Columns] Chats Column Mapping:', mapping)
-    }
-  }, [chatsColumns])
+  const effectiveChatsPerHourData = Object.keys(directChatsPerHourData).length > 0 ? directChatsPerHourData : chatsPerHourSigmaData
 
-  // Debug: Log calculated row count
-  console.log('[Render] Current chatsRowCount:', chatsRowCount)
+  // Today's chats-by-hour: compute client-side from intercomConversations (which
+  // already contain all open/snoozed/closed conversations for the team).
+  // Each conversation has a created_at timestamp — bucket by ET hour.
+  // Falls back to the dedicated API endpoint data if available.
+  const chatsPerHour = useMemo(() => {
+    if (apiChatsByHour.length > 0) return apiChatsByHour
+
+    if (!intercomConversations || intercomConversations.length === 0) return []
+
+    const now = new Date()
+    const etFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    const todayET = etFormatter.format(now)
+
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      hour12: false,
+    })
+
+    const hourCounts = new Map<number, number>()
+
+    intercomConversations.forEach(conv => {
+      const createdAt = conv.created_at
+      if (!createdAt) return
+      const ms = typeof createdAt === 'number' && createdAt < 1e12 ? createdAt * 1000 : createdAt
+      const d = new Date(ms as number)
+      const dateET = etFormatter.format(d)
+      if (dateET !== todayET) return
+
+      const etHour = parseInt(hourFormatter.format(d), 10)
+      hourCounts.set(etHour, (hourCounts.get(etHour) || 0) + 1)
+    })
+
+    return Array.from(hourCounts.entries())
+      .map(([hour, count]) => ({ hour, count }))
+      .sort((a, b) => a.hour - b.hour)
+  }, [apiChatsByHour, intercomConversations])
+
+  // Previous day chats per hour — sourced from Sigma/Snowflake data.
+  // Sigma data uses UTC hours; we convert to ET for consistent x-axis alignment.
+  // Sanity check: if the Sigma hourly total is wildly different from the known
+  // previous-day chat count (from historicalMetrics), the Sigma data is stale
+  // or from a different day — suppress it to avoid a misleading comparison line.
+  const previousDayChatsPerHour = useMemo(() => {
+    const bucketCol = config.chatsPerHourBucket as string
+    const countCol = config.chatsPerHourCount as string
+    const data = effectiveChatsPerHourData
+
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+    )
+
+    if (!data || !bucketCol || !countCol) {
+      if (isLocalhost) {
+        // Mock previous-day data in ET hours
+        return [
+          { hour: 5, count: 4 }, { hour: 6, count: 6 }, { hour: 7, count: 10 },
+          { hour: 8, count: 9 }, { hour: 9, count: 15 }, { hour: 10, count: 20 },
+          { hour: 11, count: 18 }, { hour: 12, count: 12 }, { hour: 13, count: 8 },
+          { hour: 14, count: 5 }, { hour: 15, count: 3 }, { hour: 16, count: 2 },
+          { hour: 17, count: 1 }, { hour: 18, count: 1 }, { hour: 19, count: 0 },
+        ]
+      }
+      return []
+    }
+
+    const buckets = data[bucketCol] as any[] | undefined
+    const counts = data[countCol] as any[] | undefined
+    if (!buckets || !counts) return []
+
+    // Parse Sigma data — these are UTC hour buckets from Snowflake.
+    // Convert each UTC hour to ET for consistent x-axis alignment.
+    const result: Array<{ hour: number; count: number }> = []
+    for (let i = 0; i < buckets.length; i++) {
+      const raw = buckets[i]
+      if (raw == null) continue
+      let utcHour: number
+      if (typeof raw === 'string') {
+        const match = raw.match(/(\d{2}):\d{2}:\d{2}/)
+        utcHour = match ? parseInt(match[1], 10) : NaN
+      } else if (typeof raw === 'number') {
+        const d = new Date(raw > 1e12 ? raw : raw * 1000)
+        utcHour = d.getUTCHours()
+      } else if (raw instanceof Date) {
+        utcHour = raw.getUTCHours()
+      } else {
+        utcHour = NaN
+      }
+      if (isNaN(utcHour)) continue
+
+      // Convert UTC hour to ET using Intl to correctly handle DST
+      const probe = new Date(Date.UTC(2026, 0, 15, utcHour, 0, 0)) // use a fixed date to get offset
+      const etStr = probe.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', hour12: false })
+      const etHour = parseInt(etStr, 10)
+
+      const count = typeof counts[i] === 'number' ? counts[i] : parseInt(String(counts[i]), 10) || 0
+      result.push({ hour: etHour, count })
+    }
+
+    return result.sort((a, b) => {
+      const aAdj = a.hour < 5 ? a.hour + 24 : a.hour
+      const bAdj = b.hour < 5 ? b.hour + 24 : b.hour
+      return aAdj - bAdj
+    })
+  }, [effectiveChatsPerHourData, config.chatsPerHourBucket, config.chatsPerHourCount])
   
-  // Calculate intensity from chats row count
+  // Intensity: use default when auto-intensity is on (chats source removed); otherwise use configured default
   const calculatedIntensity = useMemo(() => {
-    console.log('[Auto Intensity] Calculating intensity...')
-    console.log('[Auto Intensity] autoIntensityEnabled:', autoIntensityEnabled)
-    console.log('[Auto Intensity] effectiveChatsData exists:', !!effectiveChatsData)
-    console.log('[Auto Intensity] effectiveChatsData keys length:', effectiveChatsData ? Object.keys(effectiveChatsData).length : 0)
-    console.log('[Auto Intensity] directChatsData keys:', Object.keys(directChatsData))
-    console.log('[Auto Intensity] chatsData keys:', chatsData ? Object.keys(chatsData) : [])
-    
-    if (!autoIntensityEnabled) {
-      console.log('[Auto Intensity] Auto-intensity is disabled, using defaultIntensity:', defaultIntensity)
-      return defaultIntensity
-    }
-    
-    // If chatsData exists but has no keys, treat it as 0 rows (empty table)
-    // If chatsData doesn't exist at all, use defaultIntensity
-    if (!effectiveChatsData) {
-      console.log('[Auto Intensity] No chats data object available, using defaultIntensity:', defaultIntensity)
-      return defaultIntensity
-    }
-    
-    const keys = Object.keys(effectiveChatsData)
-    console.log('[Auto Intensity] Available column keys:', keys)
-    
-    // If there are no columns, treat as 0 rows
-    if (keys.length === 0) {
-      console.log('[Auto Intensity] No columns found (empty table), setting intensity to 0%')
-      return 0
-    }
-    
-    // Use the pre-calculated row count
-    const rowCount = chatsRowCount
-    
-    console.log('[Auto Intensity] Row count:', rowCount)
-    
-    // Calculate intensity based on thresholds:
-    // 0 rows = 0%
-    // 1 row = 5%
-    // 6 rows = 90%
-    // 7+ rows = 100%
-    let calculatedValue: number
-    if (rowCount === 0) {
-      calculatedValue = 0
-      console.log('[Auto Intensity] Row count is 0, setting intensity to 0%')
-    } else if (rowCount >= 7) {
-      calculatedValue = 100
-      console.log('[Auto Intensity] Row count >= 7, setting intensity to 100%')
-    } else if (rowCount >= 1 && rowCount <= 6) {
-      // Linear interpolation: 5% at 1 row, 90% at 6 rows
-      const intensity = 5 + (rowCount - 1) * ((90 - 5) / (6 - 1))
-      calculatedValue = Math.round(intensity)
-      console.log('[Auto Intensity] Row count is', rowCount, ', calculated intensity:', calculatedValue, '%')
-    } else {
-      calculatedValue = defaultIntensity
-      console.log('[Auto Intensity] Unexpected row count, using defaultIntensity:', defaultIntensity)
-    }
-    
-    console.log('[Auto Intensity] Final calculated intensity:', calculatedValue)
-    return calculatedValue
-  }, [chatsRowCount, autoIntensityEnabled, defaultIntensity])
-  const showLegend = config.showLegend === 'true'
+    const value = parseInt(String(defaultIntensity), 10) || 35
+    return Math.max(0, Math.min(100, value))
+  }, [defaultIntensity])
   const simulateTime = config.simulateTime === 'true'
 
   // Fetch from API if URL is configured
@@ -3391,6 +4169,17 @@ export function AvailabilityPlugin() {
 
   // Transform Sigma data into agent data structure
   const agents: AgentData[] = useMemo(() => {
+    const avatarRefreshKey = intercomLastUpdated
+      ? Math.floor(intercomLastUpdated.getTime() / 30000)
+      : null
+
+    const withAvatarRefreshKey = (avatarUrl?: string) => {
+      if (!avatarUrl) return ''
+      if (avatarRefreshKey === null) return avatarUrl
+      const separator = avatarUrl.includes('?') ? '&' : '?'
+      return `${avatarUrl}${separator}v=${avatarRefreshKey}`
+    }
+
     // Priority 1: Use API data if apiUrl is configured and we have results
     if (apiUrl && apiAgents.length > 0) {
       return apiAgents
@@ -3461,8 +4250,31 @@ export function AvailabilityPlugin() {
       const scheduleColumnKeys = Object.keys(effectiveScheduleData)
       console.log('[Availability Plugin] Schedule data columns received:', scheduleColumnKeys)
       
-      // Get TSE and OOO data directly from mapped columns
-      const tseCol = scheduleTSECol
+      // Resolve TSE column: config may store display name (e.g. "Tse") while data keys are column IDs.
+      // Use configured value if it exists in data; else find by column name; else use first column with string values.
+      let tseCol: string = scheduleTSECol
+      const tseDataDirect = effectiveScheduleData[scheduleTSECol] as string[] | undefined
+      if (!tseDataDirect || tseDataDirect.length === 0) {
+        const byName = scheduleColumns && typeof scheduleColumns === 'object'
+          ? Object.entries(scheduleColumns).find(([, meta]: [string, any]) =>
+              (meta?.name || meta?.label || '').toLowerCase() === String(scheduleTSECol).toLowerCase())
+          : null
+        if (byName) {
+          tseCol = byName[0]
+          console.log('[Availability Plugin] Resolved scheduleTSE by name:', scheduleTSECol, '->', tseCol)
+        } else {
+          const firstWithStrings = scheduleColumnKeys.find(key => {
+            const arr = effectiveScheduleData[key]
+            return Array.isArray(arr) && arr.length > 0 && typeof arr[0] === 'string'
+          })
+          if (firstWithStrings) {
+            tseCol = firstWithStrings
+            console.log('[Availability Plugin] Using first name-like column as scheduleTSE:', tseCol)
+          }
+        }
+      }
+      
+      // Get OOO data directly from mapped columns
       const oooCol = scheduleOOOCol
       
       // Find the hour column from the mapped hours
@@ -3569,6 +4381,38 @@ export function AvailabilityPlugin() {
       } else {
         console.log('[Availability Plugin] ⚠️ Missing agentName or agentStatus column config')
       }
+
+      // Override with webhook-derived away statuses (real-time from Intercom admin.away_mode_updated)
+      if (webhookAwayStatus?.byName && Object.keys(webhookAwayStatus.byName).length > 0) {
+        Object.entries(webhookAwayStatus.byName).forEach(([nameKey, entry]) => {
+          if (entry?.status) {
+            intercomStatusMap.set(nameKey, entry.status)
+          }
+        })
+        console.log('[Availability Plugin] Merged', Object.keys(webhookAwayStatus.byName).length, 'webhook away status overrides')
+      }
+
+      // Final guard: if Intercom marks admin as away, never show them as available.
+      // This protects against stale source/webhook values that can lag behind.
+      if (intercomTeamMembers.length > 0) {
+        let enforcedAwayCount = 0
+        intercomTeamMembers.forEach((member) => {
+          if (!member?.name || !member.away_mode_enabled) return
+          const awayLabel =
+            member.away_status_reason?.label ||
+            member.away_status_reason?.name ||
+            'Away'
+          const key = member.name.trim().toLowerCase()
+          if (!key) return
+          intercomStatusMap.set(key, awayLabel)
+          const firstName = key.split(' ')[0]
+          if (firstName && firstName !== key) intercomStatusMap.set(firstName, awayLabel)
+          enforcedAwayCount++
+        })
+        if (enforcedAwayCount > 0) {
+          console.log('[Availability Plugin] Enforced away-mode status for', enforcedAwayCount, 'admins from Intercom team data')
+        }
+      }
       
       // Parse CURRENTLY_ON_CHAT and CURRENTLY_LUNCH columns to get list of allowed agents
       const allowedAgentsSet = new Set<string>()
@@ -3668,6 +4512,9 @@ export function AvailabilityPlugin() {
               
               const isOOO = oooData?.[idx]?.toLowerCase() === 'yes'
               const hourBlock = hourData?.[idx] || '' // Default to empty if no hour data
+
+              // Never show OOO agents
+              if (isOOO) return null
               
               // Filter: Include agents who are either:
               // 1. In the CURRENTLY_ON_CHAT or CURRENTLY_LUNCH list, OR
@@ -3757,6 +4604,23 @@ export function AvailabilityPlugin() {
                 
                 return false
               })
+
+              const intercomTeamMember = intercomTeamMembers.find(member => {
+                const memberNameLower = (member.name || '').toLowerCase()
+                const cleanNameLower = cleanName?.toLowerCase()
+                if (!memberNameLower || !cleanNameLower) return false
+
+                if (memberNameLower === cleanNameLower) return true
+
+                if (cleanNameLower === 'nathan s' && memberNameLower === 'nathan') {
+                  return true
+                }
+
+                const cleanNameFirst = cleanNameLower.split(' ')[0]
+                if (memberNameLower === cleanNameFirst) return true
+
+                return false
+              })
               
               if (!teamMember) {
                 // Extra debug for Nathan
@@ -3772,6 +4636,8 @@ export function AvailabilityPlugin() {
                   console.log(`[Nathan Debug] Successfully matched "${cleanName}" to team member "${teamMember.name}"`)
                 }
               }
+
+              const freshIntercomAvatar = withAvatarRefreshKey(intercomTeamMember?.avatar?.image_url)
               
               // Only show agents who are scheduled for the current hour (have a valid hour block: Y, N, F, or L)
               // During off hours, don't show anyone, including OOO agents
@@ -3788,7 +4654,7 @@ export function AvailabilityPlugin() {
               let status: AgentStatus
               let statusEmoji: string
               let statusLabel: string
-              let ringColor: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'purple' | 'orange' = 'purple' // Default to purple
+              let ringColor: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'meeting' | 'purple' | 'orange' = 'purple' // Default to purple
               
               // Try multiple ways to match the name in intercom data
               const nameLower = cleanName.toLowerCase()
@@ -3816,6 +4682,8 @@ export function AvailabilityPlugin() {
               // Check if agent is on a Zoom call first (takes priority)
               if (intercomStatus && (intercomStatus.toLowerCase().includes('zoom') || intercomStatus.includes('🖥'))) {
                 ringColor = 'zoom'
+              } else if (intercomStatus && (intercomStatus.toLowerCase().includes('in a meeting') || intercomStatus.includes('🗓️'))) {
+                ringColor = 'meeting' // In a meeting (not Zoom)
               } else if (scheduledForChat) {
                 // Agent is scheduled for chat this hour
                 if (intercomStatus) {
@@ -3825,14 +4693,16 @@ export function AvailabilityPlugin() {
                   } else if (intercomLower.includes('break') || intercomLower.includes('lunch')) {
                     ringColor = 'yellow' // Should be chatting but is on break
                   } else if (intercomLower.includes('off chat') || intercomLower.includes('closing')) {
-                    ringColor = 'red' // Should be chatting but is off chat
+                    ringColor = 'red' // Should be chatting but is off chat -> Scheduled but Away
+                  } else if (intercomLower.includes('done for the day') || intercomLower.includes('done for day') || intercomLower.includes('out of office') || intercomLower.includes('out sick') || intercomLower.includes('🏡') || intercomLower.includes('🌴')) {
+                    ringColor = 'red' // Scheduled for chat but away/done for day -> Scheduled but Away
                   } else {
-                    // Scheduled but unknown status - orange warning
-                    ringColor = 'orange'
+                    // Scheduled but unknown status - yellow (away)
+                    ringColor = 'yellow'
                   }
                 } else {
                   // Scheduled for chat but no Intercom status
-                  ringColor = 'orange' // Warning - can't confirm they're available
+                  ringColor = 'yellow' // Warning - can't confirm they're available
                 }
               } else {
                 // Not scheduled for chat - default ring color
@@ -3872,9 +4742,16 @@ export function AvailabilityPlugin() {
               const finalStatusLabel = statusLabel || 'Unknown'
               
               // Filter: If agent has "Off Chat Hour" status but is NOT scheduled for chat, skip them
-              // We only want to show "Off Chat Hour" agents if they SHOULD be on chat (to highlight the issue)
               if (intercomStatus && intercomStatus.includes('Off Chat Hour') && !scheduledForChat) {
-                console.log(`[Availability Plugin] Agent "${cleanName}" has "Off Chat Hour" status but not scheduled for chat - skipping`)
+                return null
+              }
+              // Done for the day / Out of office / Out sick: only show if scheduled for chat (then they go in "Scheduled but Away")
+              const labelLower = finalStatusLabel.toLowerCase()
+              if ((labelLower.includes('done for the day') || labelLower.includes('done for day') || labelLower.includes('out of office') || labelLower.includes('out sick')) && !scheduledForChat) {
+                return null
+              }
+              // Always hide "Out sick" agents — even if scheduled, they're not available
+              if (labelLower.includes('out sick')) {
                 return null
               }
               
@@ -3894,7 +4771,7 @@ export function AvailabilityPlugin() {
               return {
                 id: `agent-${idx}`,
                 name: cleanName,
-                avatar: teamMember?.avatar || `https://i.pravatar.cc/40?u=${cleanName}`,
+                avatar: freshIntercomAvatar || teamMember?.avatar || `https://i.pravatar.cc/40?u=${cleanName}`,
                 status,
                 timezone: teamMember?.timezone || 'America/New_York',
                 statusEmoji: finalStatusEmoji,
@@ -3957,7 +4834,7 @@ export function AvailabilityPlugin() {
       ...agent,
       status: statusUpdates[agent.id] || agent.status,
     }))
-  }, [sigmaData, columns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData, directOooData, oooData])
+  }, [sigmaData, columns, scheduleColumns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData, directOooData, oooData, webhookAwayStatus, intercomTeamMembers, intercomLastUpdated])
 
   // OOO agents state - will be populated from schedule data (hidden for now)
   const [_oooAgents, setOooAgents] = useState<{ name: string; avatar: string }[]>([])
@@ -4042,25 +4919,12 @@ export function AvailabilityPlugin() {
 
   // Update intensity when calculated intensity changes (if auto-intensity is enabled)
   useEffect(() => {
-    console.log('[Auto Intensity Effect] Running effect')
-    console.log('[Auto Intensity Effect] autoIntensityEnabled:', autoIntensityEnabled)
-    console.log('[Auto Intensity Effect] calculatedIntensity:', calculatedIntensity)
-    console.log('[Auto Intensity Effect] defaultIntensity:', defaultIntensity)
-    console.log('[Auto Intensity Effect] Current intensity state:', intensity)
-    console.log('[Auto Intensity Effect] Has effectiveChatsData:', !!effectiveChatsData)
-    console.log('[Auto Intensity Effect] effectiveChatsData keys:', effectiveChatsData ? Object.keys(effectiveChatsData) : [])
-    console.log('[Auto Intensity Effect] directChatsData keys:', Object.keys(directChatsData))
-    
     if (autoIntensityEnabled) {
-      // Always use calculated intensity when auto-intensity is enabled
-      console.log('[Auto Intensity Effect] Auto-intensity enabled, setting intensity to:', calculatedIntensity)
       setIntensity(calculatedIntensity)
     } else {
-      // Only use default intensity if auto-intensity is disabled
-      console.log('[Auto Intensity Effect] Auto-intensity disabled, setting intensity to default:', defaultIntensity)
-      setIntensity(defaultIntensity)
+      setIntensity(parseInt(String(defaultIntensity), 10) || 35)
     }
-  }, [calculatedIntensity, autoIntensityEnabled, defaultIntensity, effectiveChatsData, directChatsData])
+  }, [calculatedIntensity, autoIntensityEnabled, defaultIntensity])
 
   // Time simulation / real-time updates
   useEffect(() => {
@@ -4081,157 +4945,6 @@ export function AvailabilityPlugin() {
 
     return () => clearInterval(interval)
   }, [simulateTime])
-
-  // Calculate TSE counts (updates every minute)
-  const [tseCountsMinuteTick, setTseCountsMinuteTick] = useState(0)
-  
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTseCountsMinuteTick(prev => prev + 1)
-    }, 60000) // Update every minute (60000ms)
-    
-    return () => clearInterval(interval)
-  }, [])
-
-  const tseCounts = useMemo(() => {
-    // Calculate current UTC hour (same logic as Timeline/AgentZones)
-    const nowUTC = (
-      currentTime.getUTCHours() +
-      currentTime.getUTCMinutes() / 60 +
-      currentTime.getUTCSeconds() / 3600
-    )
-
-    // Determine active cities (same logic as Timeline/AgentZones)
-    const activeCities = cities.filter(c => {
-      // Handle endHour > 24 (cities that span midnight)
-      if (c.endHour > 24) {
-        const nextDayEndHour = c.endHour - 24
-        return nowUTC >= c.startHour || nowUTC < nextDayEndHour + 1
-      } else {
-        return nowUTC >= c.startHour && nowUTC < c.endHour + 1
-      }
-    })
-
-    // Count scheduled TSEs: Active = non-away status, Away = away status
-    let activeCount = 0
-    let awayCount = 0
-    
-    // Build a map of agent names to their status from agentsByCity
-    const agentStatusMap = new Map<string, 'away' | 'call' | 'lunch' | 'chat' | 'closing'>()
-    agentsByCity.forEach((agents) => {
-      agents.forEach(agent => {
-        if (agent.name) {
-          const cleanName = agent.name.trim().toLowerCase()
-          agentStatusMap.set(cleanName, agent.status)
-          // Also store by first name for matching
-          const firstName = cleanName.split(' ')[0]
-          if (firstName !== cleanName) {
-            agentStatusMap.set(firstName, agent.status)
-          }
-        }
-      })
-    })
-    
-    const effectiveScheduleData = Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData
-    const scheduleTSECol = config.scheduleTSE as string
-    const scheduleOOOCol = config.scheduleOOO as string
-    
-    if (effectiveScheduleData && scheduleTSECol) {
-      const tseData = effectiveScheduleData[scheduleTSECol] as string[] | undefined
-      const oooData = scheduleOOOCol && effectiveScheduleData[scheduleOOOCol] 
-        ? effectiveScheduleData[scheduleOOOCol] as string[] | undefined 
-        : undefined
-      
-      // Build set of OOO TSEs for filtering
-      const oooSet = new Set<string>()
-      if (oooData) {
-        oooData.forEach((value, idx) => {
-          if (value && String(value).toLowerCase() === 'yes') {
-            const tseName = tseData?.[idx]?.trim().toLowerCase()
-            if (tseName) {
-              oooSet.add(tseName)
-              // Also add first name for matching
-              const firstName = tseName.split(' ')[0]
-              if (firstName !== tseName) {
-                oooSet.add(firstName)
-              }
-            }
-          }
-        })
-      }
-      
-      // Get active city timezones
-      const activeTimezones = new Set(activeCities.map(c => c.timezone))
-      
-      // Count scheduled TSEs in active cities
-      if (tseData) {
-        tseData.forEach((name) => {
-          if (!name || !name.trim()) return
-          
-          const cleanName = name.trim()
-          const cleanNameLower = cleanName.toLowerCase()
-          const firstName = cleanNameLower.split(' ')[0]
-          
-          // Skip if OOO
-          if (oooSet.has(cleanNameLower) || oooSet.has(firstName)) {
-            return
-          }
-          
-          // Find team member to get timezone
-          const teamMember = TEAM_MEMBERS.find(m => 
-            m.name.toLowerCase() === cleanNameLower ||
-            m.name.toLowerCase() === firstName ||
-            cleanNameLower.startsWith(m.name.toLowerCase() + ' ') ||
-            m.name.toLowerCase().startsWith(firstName + ' ')
-          )
-          
-          // Only count if scheduled in an active city
-          if (teamMember && activeTimezones.has(teamMember.timezone)) {
-            // Get agent status
-            const agentStatus = agentStatusMap.get(cleanNameLower) || 
-                               agentStatusMap.get(firstName) ||
-                               null
-            
-            // Active = scheduled TSEs who do NOT have "away" status
-            // Away = scheduled TSEs who DO have "away" status
-            if (agentStatus === 'away') {
-              awayCount++
-            } else if (agentStatus !== null) {
-              // Has a status that's not "away" (chat, lunch, call, closing)
-              activeCount++
-            }
-            // If no status found, don't count them (they might not be in agentsByCity)
-          }
-        })
-      }
-    } else {
-      // Fallback: count agents in active cities from agentsByCity
-      activeCities.forEach(city => {
-        const agents = agentsByCity.get(city.timezone) || []
-        agents.forEach(agent => {
-          if (agent.status === 'away') {
-            awayCount++
-          } else {
-            activeCount++
-          }
-        })
-      })
-    }
-
-    return {
-      active: activeCount,
-      away: awayCount,
-    }
-  }, [
-    cities,
-    agentsByCity,
-    currentTime,
-    scheduleData,
-    directScheduleData,
-    config.scheduleTSE,
-    config.scheduleOOO,
-    tseCountsMinuteTick, // Include minuteTick to trigger recalculation every minute
-  ])
 
   // =================================================================
   // CAPACITY METRICS (TSEs @ Capacity and Available Capacity)
@@ -4459,6 +5172,26 @@ export function AvailabilityPlugin() {
   const hasSigmaData = sigmaData && Object.keys(sigmaData).length > 0
   const hasApiData = apiUrl && apiAgents.length > 0
   const hasAnyData = hasScheduleData || hasSigmaData || hasApiData
+  const webhookFetchedAt = webhookAwayStatus?.fetchedAt ? new Date(webhookAwayStatus.fetchedAt) : null
+  const webhookAgeSeconds = webhookFetchedAt
+    ? Math.max(0, Math.floor((currentTime.getTime() - webhookFetchedAt.getTime()) / 1000))
+    : null
+  const intercomAgeSeconds = intercomLastUpdated
+    ? Math.max(0, Math.floor((currentTime.getTime() - intercomLastUpdated.getTime()) / 1000))
+    : null
+  const awayFeedAges = [webhookAgeSeconds, intercomAgeSeconds].filter((v): v is number => v !== null)
+  const awayStatusMaxAgeSeconds = awayFeedAges.length > 0 ? Math.max(...awayFeedAges) : null
+  const awayStatusFreshnessState =
+    awayStatusMaxAgeSeconds === null ? 'unknown'
+      : awayStatusMaxAgeSeconds <= 20 ? 'live'
+      : awayStatusMaxAgeSeconds <= 60 ? 'aging'
+      : 'stale'
+  // @ts-ignore
+  const awayStatusFreshnessColor =
+    awayStatusFreshnessState === 'live' ? '#16a34a'
+      : awayStatusFreshnessState === 'aging' ? '#d97706'
+      : awayStatusFreshnessState === 'stale' ? '#dc2626'
+      : '#64748b'
 
   // Show setup instructions if no data is connected and we're in Sigma
   if (!hasAnyData && agents.length === 0) {
@@ -4497,15 +5230,10 @@ export function AvailabilityPlugin() {
     <div className="app" style={{ '--active-color': activeColor } as React.CSSProperties}>
       <DarkModeToggle isDarkMode={isDarkMode} onToggle={toggleDarkMode} />
       <AudioToggle isAudioEnabled={isAudioEnabled} onToggle={toggleAudio} />
+      {/* Auth is handled server-side via INTERCOM_TOKEN — no Connect button needed */}
       <IncidentBanner
-        incidentsData={incidentsData}
-        incidentsColumns={incidentsColumns}
-        incidentDetailsColumn={config.incidentDetails as string | undefined}
-        sevStatusColumn={config.incidentSevStatus as string | undefined}
-        incidentCreatedAtColumn={config.incidentCreatedAt as string | undefined}
-        incidentUpdatedAtColumn={config.incidentUpdatedAt as string | undefined}
-        chatCount={dailyMetrics?.chatsToday ?? totalChatsTakenToday}
-        closedCount={dailyMetrics?.closedToday ?? totalClosedToday}
+        chatCount={bannerChatsToday}
+        closedCount={bannerClosedToday}
         chatsTrending={chatsTrending}
         previousClosed={historicalMetrics.yesterdayClosed}
         medianResponseTime={medianResponseTime}
@@ -4520,10 +5248,10 @@ export function AvailabilityPlugin() {
         unassignedCount={unassignedConvs.length}
         availableCapacity={capacityMetrics.availableCapacity}
       />
-      <div className="main-content" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+      <div className="main-content" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}
         <div style={{
-          width: '400px',
+          width: '280px',
           flexShrink: 0,
           position: 'sticky',
           top: '20px',
@@ -4533,6 +5261,7 @@ export function AvailabilityPlugin() {
           flexDirection: 'column',
           marginLeft: '-20px'
         }}>
+          <CoinPodiumCard intercomTeamMembers={intercomTeamMembers} />
           <TSEConversationTable
             conversationData={tseConversationData}
             conversationColumns={tseConversationColumns}
@@ -4541,6 +5270,7 @@ export function AvailabilityPlugin() {
             snoozedColumn={config.tseConversationSnoozed as string | undefined}
             closedColumn={config.tseConversationClosed as string | undefined}
             intercomConversations={intercomConversations}
+            intercomClosedConversations={intercomClosedTodayConversations}
             intercomTeamMembers={intercomTeamMembers}
             lastUpdated={intercomLastUpdated}
           />
@@ -4549,7 +5279,7 @@ export function AvailabilityPlugin() {
         {/* Main content area */}
         <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
           <div className="timeline-section">
-            <div style={{ marginBottom: '8px', position: 'relative' }}>
+            <div style={{ marginBottom: '4px', position: 'relative' }}>
               <div style={{
                 position: 'absolute',
                 top: 0,
@@ -4558,39 +5288,88 @@ export function AvailabilityPlugin() {
                 color: 'var(--text-secondary)',
                 fontWeight: 500,
                 display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: '2px'
               }}>
-                <span style={{ opacity: 0.7 }}>Last updated:</span>
-                <span style={{ fontWeight: 600 }}>{formatLastUpdated(lastUpdated)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ opacity: 0.7 }}>Last updated:</span>
+                  <span style={{ fontWeight: 600 }}>{formatLastUpdated(lastUpdated)}</span>
+                </div>
               </div>
             </div>
-            <ResoQueueBelt unassignedConvs={unassignedConvs} chatsTodayCount={totalChatsTakenToday} isAudioEnabled={isAudioEnabled} />
+            <ResoQueueBelt
+              unassignedConvs={unassignedConvs}
+              chatsTodayCount={bannerChatsToday}
+              isAudioEnabled={isAudioEnabled}
+            />
 
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
-              <div style={{ flex: 1, width: '100%', minWidth: 0 }}>
-                <Timeline
-                  cities={cities}
-                  currentTime={currentTime}
-                  simulateTime={simulateTime}
+            {(() => {
+              const etDayStr = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/New_York',
+                weekday: 'long',
+              }).format(currentTime)
+              const isWeekend = etDayStr === 'Saturday' || etDayStr === 'Sunday'
+
+              if (isWeekend) {
+                return (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px 16px',
+                    gap: '12px',
+                  }}>
+                    <div style={{ fontSize: '36px' }}>🏖️</div>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      color: '#334155',
+                      letterSpacing: '-0.01em',
+                    }}>
+                      It's the weekend!
+                    </div>
+                    <div style={{
+                      fontSize: '13px',
+                      color: '#94a3b8',
+                      fontWeight: 500,
+                      textAlign: 'center',
+                      maxWidth: '320px',
+                      lineHeight: '1.4',
+                    }}>
+                      Chat support resumes on Monday. Enjoy your time off!
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <AvailableTSEsTable 
+                  onCountsUpdate={(active, away) => {
+                    // Update state only if values changed to prevent loops
+                    setLiveTseCounts(prev => {
+                      if (prev.active === active && prev.away === away) return prev;
+                      return { active, away };
+                    });
+                  }} 
                 />
+              )
+            })()}
 
-                <AgentZones
-                  cities={cities}
-                  agentsByCity={agentsByCity}
-                  currentTime={currentTime}
-                  tseOpenChatCounts={capacityMetrics.tseOpenChatMap}
-                />
-              </div>
-            </div>
-
-            {showLegend && <Legend />}
+            <Timeline
+              cities={cities}
+              currentTime={currentTime}
+              simulateTime={simulateTime}
+              chatsPerHour={chatsPerHour}
+              previousDayChatsPerHour={previousDayChatsPerHour}
+            />
           </div>
         </div>
 
         {/* Right sidebar with Fallback Schedule Risk */}
         <div style={{
-          width: '360px',
+          width: '280px',
           flexShrink: 0,
           position: 'sticky',
           top: '20px',
@@ -4601,41 +5380,22 @@ export function AvailabilityPlugin() {
           marginRight: '-20px'
         }}>
           {/* TSE Status Counts */}
-          {(tseCounts.active !== undefined || tseCounts.away !== undefined || capacityMetrics.tseAtCapacityCount !== undefined) && (
+          {(liveTseCounts.active !== undefined || liveTseCounts.away !== undefined) && (
             <div className="tse-status-sidebar-counts">
-              {tseCounts.active !== undefined && (
+              {liveTseCounts.active !== undefined && (
                 <div className="tse-status-sidebar-stat">
                   <div className="tse-status-sidebar-value tse-status-active">
-                    {tseCounts.active}
+                    {liveTseCounts.active}
                   </div>
                   <div className="tse-status-sidebar-label">ACTIVE</div>
                 </div>
               )}
-              {tseCounts.away !== undefined && (
+              {liveTseCounts.away !== undefined && (
                 <div className="tse-status-sidebar-stat">
                   <div className="tse-status-sidebar-value tse-status-away">
-                    {tseCounts.away}
+                    {liveTseCounts.away}
                   </div>
-                  <div className="tse-status-sidebar-label">Away</div>
-                </div>
-              )}
-              {capacityMetrics.tseAtCapacityCount !== undefined && (
-                <div className="tse-status-sidebar-stat">
-                  <div 
-                    className="tse-status-sidebar-value" 
-                    style={{ 
-                      color: capacityMetrics.tseAtCapacityCount === 0 
-                        ? '#10b981' // Green for 0
-                        : capacityMetrics.tseAtCapacityCount <= 2
-                        ? '#f59e0b' // Yellow for 1-2
-                        : capacityMetrics.tseAtCapacityCount <= 4
-                        ? '#f97316' // Orange for 3-4
-                        : '#ef4444' // Red for 5+
-                    }}
-                  >
-                    {capacityMetrics.tseAtCapacityCount}
-                  </div>
-                  <div className="tse-status-sidebar-label">TSE @ Capacity</div>
+                  <div className="tse-status-sidebar-label">AWAY</div>
                 </div>
               )}
             </div>
@@ -4668,6 +5428,420 @@ export function AvailabilityPlugin() {
   )
 }
 
+function extractEmojiAndText(reason: string): { emoji: string; text: string } {
+  const defaultEmoji = '🟡'
+  if (!reason) return { emoji: defaultEmoji, text: 'Away' }
+  
+  // Simple check for common emojis used in Intercom statuses
+  const emojiRegex = /^([\u{1F300}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}])/u;
+  const match = reason.match(emojiRegex);
+  
+  if (match) {
+    return { emoji: match[1], text: reason.substring(match[0].length).trim() || 'Away' }
+  }
+  
+  // Infer based on text if no emoji found
+  const lower = reason.toLowerCase();
+  if (lower.includes('zoom')) return { emoji: '🖥', text: reason }
+  if (lower.includes('meeting')) return { emoji: '🗓️', text: reason }
+  if (lower.includes('lunch') || lower.includes('break')) return { emoji: '☕', text: reason }
+  if (lower.includes('sick') || lower.includes('ooo') || lower.includes('done')) return { emoji: '🏡', text: reason }
+  
+  return { emoji: defaultEmoji, text: reason }
+}
+
+function AvailableTSEsTable({ onCountsUpdate }: { onCountsUpdate?: (active: number, away: number) => void }) {
+  const [admins, setAdmins] = useState<any[]>([])
+  const [awayReasons, setAwayReasons] = useState<Map<string, string>>(new Map())
+  const [loading, setLoading] = useState(true)
+  
+  // Bring in the realtime webhook hook
+  const { data: webhookData } = useWebhookAwayStatus(true)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch('/api/intercom/available-tses')
+        if (!response.ok) {
+          throw new Error('Failed to fetch available TSEs')
+        }
+        
+        const data = await response.json()
+        
+        const reasonsMap = new Map<string, string>()
+        if (data.awayReasons) {
+          data.awayReasons.forEach((r: any) => {
+            reasonsMap.set(String(r.id), `${r.emoji || ''} ${r.label || ''}`.trim())
+          })
+        }
+        
+        if (data.admins) {
+          const teamAdmins = [...data.admins]
+          teamAdmins.sort((a: any, b: any) => a.name.localeCompare(b.name))
+          setAdmins(teamAdmins)
+        }
+        
+        setAwayReasons(reasonsMap)
+      } catch (err) {
+        console.warn('Failed to fetch TSEs', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchData()
+    const interval = setInterval(fetchData, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (!loading && onCountsUpdate) {
+      // Re-calculate the visible away count to pass up to parent
+      // since we must call this hook before any early returns.
+      const isExcluded = (name: string) => {
+        if (!name) return false
+        if (EXCLUDED_TSE_NAMES.includes(name)) return true
+        const firstName = name.split(' ')[0]
+        return EXCLUDED_TSE_NAMES.includes(firstName)
+      }
+
+      let activeCount = 0
+      let awayCount = 0
+      
+      admins.forEach(admin => {
+        if (isExcluded(admin.name)) return
+        
+        const hookStatus = webhookData?.byId?.[admin.id]
+        let isAvailable = !admin.away_mode_enabled
+        let reasonText = admin.away_status_reason_id ? awayReasons.get(String(admin.away_status_reason_id)) : ''
+
+        if (hookStatus) {
+          const hookIsAvailable = hookStatus.status === 'Available'
+          if (hookIsAvailable) {
+            isAvailable = true
+            reasonText = ''
+          } else {
+            isAvailable = false
+            if (hookStatus.status === 'Away' && admin.away_status_reason_id && reasonText) {
+              // Keep reasonText from API
+            } else {
+              reasonText = hookStatus.status
+            }
+          }
+        }
+
+        if (isAvailable) {
+          activeCount++
+        } else {
+          const { text } = extractEmojiAndText(reasonText || 'Away')
+          if (text !== 'Off Chat Hour' && text !== 'Done for the day' && text !== 'Out sick' && text !== 'Out of office') {
+            awayCount++
+          }
+        }
+      })
+      
+      onCountsUpdate(activeCount, awayCount)
+    }
+  }, [admins, webhookData, awayReasons, loading, onCountsUpdate])
+
+  if (loading) return <div style={{ padding: '20px', color: 'var(--text-muted)' }}>Loading available TSEs...</div>
+
+  // Process data
+  const processedAdmins = admins.map(admin => {
+    const hookStatus = webhookData?.byId?.[admin.id]
+    let isAvailable = !admin.away_mode_enabled
+    let reasonText = admin.away_status_reason_id ? awayReasons.get(String(admin.away_status_reason_id)) : ''
+    let minsAway = admin.minutes_away
+
+    if (hookStatus) {
+      const hookIsAvailable = hookStatus.status === 'Available'
+      if (hookIsAvailable) {
+        isAvailable = true
+        reasonText = ''
+        minsAway = null
+      } else {
+        isAvailable = false
+        // If webhook says generic "Away" but the API has a specific reason, prefer the API's specific reason.
+        if (hookStatus.status === 'Away' && admin.away_status_reason_id && reasonText) {
+          // Keep reasonText from API
+        } else {
+          reasonText = hookStatus.status
+        }
+        
+        const nowSeconds = Math.floor(Date.now() / 1000)
+        const hookSeconds = Math.floor(hookStatus.updatedAt / 1000)
+        minsAway = Math.max(0, Math.floor((nowSeconds - hookSeconds) / 60))
+      }
+    }
+
+    return { ...admin, calculatedAvailable: isAvailable, calculatedReason: reasonText, calculatedMinsAway: minsAway }
+  })
+
+  const availableAdmins = processedAdmins.filter(a => a.calculatedAvailable)
+  const awayAdmins = processedAdmins.filter(a => !a.calculatedAvailable)
+
+  // Filter out excluded TSEs
+  const EXCLUDED_TSE_NAMES = [
+    'Holly',
+    'Holly Coxon',
+    'Grace',
+    'Grace Liu',
+    'Grace Sanford',
+    'Zen',
+    'Zen Lee',
+    'Chetana',
+    'Chetana Shinde',
+    'svc-prd-tse-intercom SVC',
+    'TSE 6519361',
+    'Zen Junior',
+    'Prerit',
+    'Prerit Sachdeva',
+    'Sanyam',
+    'Sanyam Khurana',
+  ]
+
+  const isExcluded = (name: string) => {
+    if (!name) return false
+    if (EXCLUDED_TSE_NAMES.includes(name)) return true
+    const firstName = name.split(' ')[0]
+    return EXCLUDED_TSE_NAMES.includes(firstName)
+  }
+
+  const finalAvailableAdmins = availableAdmins.filter(a => !isExcluded(a.name))
+  const finalAwayAdmins = awayAdmins.filter(a => !isExcluded(a.name))
+
+  // Group away admins by reason
+  const awayGroups: Record<string, typeof processedAdmins> = {}
+  finalAwayAdmins.forEach(admin => {
+    const { emoji, text } = extractEmojiAndText(admin.calculatedReason || 'Away')
+    const key = `${emoji}|${text}`
+    if (!awayGroups[key]) awayGroups[key] = []
+    awayGroups[key].push(admin)
+  })
+
+  // Format time
+  const formatTime = (mins: number | null | undefined) => {
+    if (mins == null) return ''
+    if (mins >= 60) {
+      const h = Math.floor(mins / 60)
+      const m = mins % 60
+      return m > 0 ? `${h}h${m}m` : `${h}h`
+    }
+    return `${mins}m`
+  }
+
+  // Component for rendering a cluster of avatars
+  const AvatarCluster = ({ 
+    groupAdmins, 
+    borderColor, 
+    emojiBadge 
+  }: { 
+    groupAdmins: typeof processedAdmins, 
+    borderColor: string, 
+    emojiBadge?: string 
+  }) => {
+    // Chunk avatars into rows to create a "bunched" honeycomb look
+    const MAX_PER_ROW = 4
+    const rows = []
+    for (let i = 0; i < groupAdmins.length; i += MAX_PER_ROW) {
+      rows.push(groupAdmins.slice(i, i + MAX_PER_ROW))
+    }
+
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '16px 8px 24px 8px' 
+      }}>
+        {rows.map((row, rowIdx) => (
+          <div key={rowIdx} style={{ 
+            display: 'flex', 
+            justifyContent: 'center',
+            marginTop: rowIdx > 0 ? '-24px' : '0px',
+            zIndex: 10 - rowIdx // ensure top rows are behind bottom rows (or vice versa depending on preference, here top is behind)
+          }}>
+            {row.map((admin, adminIdx) => (
+              <div key={admin.id} 
+                style={{ 
+                  position: 'relative', 
+                  display: 'inline-block',
+                  margin: '0 -10px',
+                  zIndex: 50 - adminIdx,
+                }} 
+                title={`${admin.name}${admin.calculatedReason ? ` - ${admin.calculatedReason}` : ''}`}
+                className="avatar-cluster-item"
+              >
+                <div style={{
+                  width: '76px', 
+                  height: '76px', 
+                  borderRadius: '50%',
+                  border: `3px solid ${borderColor}`,
+                  padding: '2px',
+                  background: 'var(--bg-card)',
+                  boxShadow: '0 0 0 3px var(--bg-card), 0 4px 6px rgba(0,0,0,0.1)'
+                }}>
+                  {admin.avatar?.image_url ? (
+                    <img src={admin.avatar.image_url} alt={admin.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: 'rgba(148,163,184,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      {admin.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                
+                {emojiBadge && (
+                  <div style={{
+                    position: 'absolute', 
+                    top: '0px', 
+                    right: '-4px',
+                    background: '#fff', 
+                    borderRadius: '50%', 
+                    width: '30px', 
+                    height: '30px',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    fontSize: '16px',
+                    boxShadow: '0 0 0 2px var(--bg-card), 0 2px 4px rgba(0,0,0,0.1)',
+                    zIndex: 2
+                  }}>
+                    {emojiBadge}
+                  </div>
+                )}
+
+                {admin.calculatedMinsAway != null ? (
+                  <div style={{
+                    position: 'absolute', 
+                    bottom: '-6px', 
+                    left: '50%', 
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(0,0,0,0.75)', 
+                    color: 'white', 
+                    fontSize: '11px', 
+                    fontWeight: 700,
+                    padding: '2px 8px', 
+                    borderRadius: '12px', 
+                    whiteSpace: 'nowrap',
+                    border: '2px solid var(--bg-card)',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                    zIndex: 3
+                  }}>
+                    {formatTime(admin.calculatedMinsAway)}
+                  </div>
+                ) : !admin.calculatedAvailable ? (
+                  <div style={{
+                    position: 'absolute', 
+                    bottom: '-12px', 
+                    left: '50%', 
+                    transform: 'translateX(-50%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 3
+                  }}>
+                    <img 
+                      src="https://res.cloudinary.com/doznvxtja/image/upload/v1771579123/It_s_been_84_years..._1_qgpvqv.svg" 
+                      alt="84 years" 
+                      style={{ height: '32px', marginBottom: '-6px', zIndex: 1, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }} 
+                    />
+                    <div style={{
+                      background: 'rgba(0,0,0,0.85)', 
+                      color: 'white', 
+                      fontSize: '10px', 
+                      fontWeight: 700,
+                      padding: '1px 6px', 
+                      borderRadius: '12px', 
+                      whiteSpace: 'nowrap',
+                      border: '2px solid var(--bg-card)',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                      zIndex: 2
+                    }}>
+                      It's Been 84 Years...
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // Calculate the visible away count
+  let visibleAwayCount = 0
+  Object.entries(awayGroups).forEach(([key, groupAdmins]) => {
+    const [_, text] = key.split('|')
+    if (text === 'Off Chat Hour' || text === 'Done for the day' || text === 'Out sick' || text === 'Out of office') {
+      return
+    }
+    visibleAwayCount += groupAdmins.length
+  })
+
+  return (
+    <div style={{ marginTop: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(560px, 1.5fr)', gap: '32px' }}>
+        
+        {/* Available Section */}
+        <div>
+          <h3 style={{ textAlign: 'center', color: 'var(--text-primary)', fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
+            Available ({finalAvailableAdmins.length})
+          </h3>
+          <div style={{ background: 'rgba(16, 185, 129, 0.05)', borderRadius: '16px', padding: '16px' }}>
+            <AvatarCluster 
+              groupAdmins={finalAvailableAdmins} 
+              borderColor="#22c55e" 
+              emojiBadge="🟢" 
+            />
+          </div>
+        </div>
+
+        {/* Away Section */}
+        <div>
+          <h3 style={{ textAlign: 'center', color: 'var(--text-primary)', fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
+            Away
+          </h3>
+          <div style={{ display: 'flex', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'stretch', gap: '16px' }}>
+            {Object.entries(awayGroups).sort((a, b) => b[1].length - a[1].length).map(([key, groupAdmins]) => {
+              const [emoji, text] = key.split('|')
+              const displayText = text === 'On a Zoom call w/ client' ? 'Zoom' : text
+              
+              // Hide specific away reasons
+              if (text === 'Off Chat Hour' || text === 'Done for the day' || text === 'Out sick' || text === 'Out of office') {
+                return null
+              }
+
+              // Determine border color based on text
+              let borderColor = '#facc15' // yellow default
+              const lowerText = text.toLowerCase()
+              if (lowerText.includes('zoom') || lowerText.includes('call')) borderColor = '#3b82f6' // blue
+              else if (lowerText.includes('meeting')) borderColor = '#64748b' // gray
+              else if (lowerText.includes('lunch') || lowerText.includes('break')) borderColor = '#f97316' // orange
+              else if (lowerText.includes('sick') || lowerText.includes('ooo') || lowerText.includes('done')) borderColor = '#ef4444' // red
+              
+              return (
+                <div key={key} style={{ background: 'rgba(148, 163, 184, 0.05)', borderRadius: '16px', padding: '16px', flex: '1 1 0', minWidth: '0' }}>
+                  <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '12px' }}>
+                    {displayText} ({groupAdmins.length})
+                  </div>
+                  <AvatarCluster 
+                    groupAdmins={groupAdmins} 
+                    borderColor={borderColor} 
+                    emojiBadge={emoji} 
+                  />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )
+}
+
 // Generate agents from real team member data with random statuses for demo mode
 function generateDemoAgents(_cities: City[]): AgentData[] {
   // Define status configurations with associated emoji, label, and ring colors
@@ -4675,7 +5849,7 @@ function generateDemoAgents(_cities: City[]): AgentData[] {
     status: AgentStatus
     emoji: string
     label: string
-    ringColor: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'purple' | 'orange'
+    ringColor: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'meeting' | 'purple' | 'orange'
   }> = [
     { status: 'chat', emoji: '🟢', label: 'Available', ringColor: 'green' },
     { status: 'chat', emoji: '🟢', label: 'Available', ringColor: 'green' },
@@ -4685,7 +5859,7 @@ function generateDemoAgents(_cities: City[]): AgentData[] {
     { status: 'lunch', emoji: '☕', label: '☕ On a break', ringColor: 'yellow' },
     { status: 'lunch', emoji: '🍕', label: '🥪 At Lunch', ringColor: 'yellow' },
     { status: 'call', emoji: '🖥', label: '🖥 Zoom - 1:1 Meeting', ringColor: 'zoom' },
-    { status: 'call', emoji: '🗓️', label: '🗓️ In a meeting', ringColor: 'purple' },
+    { status: 'call', emoji: '🗓️', label: '🗓️ In a meeting', ringColor: 'meeting' },
     { status: 'away', emoji: '🏡', label: 'Away', ringColor: 'blue' },
     { status: 'call', emoji: '🐛', label: '🐛 Doing Bug Triage/Escalation', ringColor: 'purple' },
     { status: 'call', emoji: '👨‍🏫', label: '👨‍🏫 Coaching / Shadowing', ringColor: 'purple' },

@@ -17,7 +17,7 @@ export interface AgentData {
   timezone: string
   statusEmoji?: string // Actual emoji from Intercom (🟢, ☕, 🚫, etc.)
   statusLabel?: string // Full status text from Intercom
-  ringColor?: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'purple' | 'orange' // Ring color: red = off chat when scheduled, yellow = on break when scheduled, green = available when scheduled, orange = status unclear, zoom = on zoom call, purple = default, blue = not scheduled
+  ringColor?: 'red' | 'yellow' | 'green' | 'blue' | 'zoom' | 'meeting' | 'purple' | 'orange' // Ring color: red = scheduled but away/off chat, yellow = on break, green = available, orange = status unclear, zoom = on zoom, meeting = in a meeting, purple = default, blue = away
   minutesInStatus?: number // Minutes the agent has been in their current status
 }
 

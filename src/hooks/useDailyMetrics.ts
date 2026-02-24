@@ -19,6 +19,8 @@ export interface UseDailyMetricsState {
   lastUpdated: Date | null
 }
 
+const AUTH_REQUIRED_ERROR = 'AUTH_REQUIRED'
+
 export interface UseDailyMetricsOptions {
   /** Refresh interval in milliseconds (default: 60000 = 1 minute) */
   refreshInterval?: number
@@ -85,6 +87,18 @@ export function useDailyMetrics(options: UseDailyMetricsOptions = {}) {
 
       const fetchDuration = performance.now() - fetchStartTime
       if (LOG) console.log(`[useDailyMetrics] API call took ${Math.round(fetchDuration)}ms`)
+
+      if (response.status === 401) {
+        // In embedded contexts (Sigma iframe), missing/blocked cookies are common.
+        // Surface a consistent error so the UI can prompt the user to authenticate.
+        setState(prev => ({
+          ...prev,
+          metrics: null,
+          loading: false,
+          error: AUTH_REQUIRED_ERROR,
+        }))
+        return
+      }
 
       if (!response.ok) {
         const errorText = await response.text()

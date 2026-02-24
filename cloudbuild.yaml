@@ -46,7 +46,7 @@ steps:
           --region "$$REGION" \
           --platform managed \
           --allow-unauthenticated \
-          --set-env-vars "QHM_API_BASE_URL=$$QHM_URL,ALLOWED_ORIGIN=https://app.sigmacomputing.com"
+          --set-env-vars "^||^QHM_API_BASE_URL=$$QHM_URL||ALLOWED_ORIGIN=https://sigmacomputing.com,https://app.sigmacomputing.com,https://*.sigmacomputing.com"
 
 images:
   - 'gcr.io/$PROJECT_ID/support-queue-live:$BUILD_ID'

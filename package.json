@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:all": "node scripts/start-dev-stack.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "api:local": "node scripts/start-api-local.mjs"
   },
   "dependencies": {
     "@sigmacomputing/plugin": "^1.0.10",

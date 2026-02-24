@@ -18,19 +18,19 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'nick',
     name: 'Nick',
-    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765232392/2_fpxpja.svg',
+    avatar: 'https://ca.slack-edge.com/E07M25LCK1V-U07JAGQ8L5C-4a134246ec62-192',
     timezone: 'America/New_York',
   },
   {
     id: 'julia',
     name: 'Julia',
-    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765232388/17_hxyc2t.svg',
+    avatar: 'https://ca.slack-edge.com/E07M25LCK1V-U075DCWL80K-ccad4353d4c3-192',
     timezone: 'America/New_York',
   },
   {
     id: 'ankita',
     name: 'Ankita',
-    avatar: 'https://res.cloudinary.com/doznvxtja/image/upload/v1765282918/Untitled_design_10_bsgeve.svg',
+    avatar: 'https://ca.slack-edge.com/E07M25LCK1V-U08L2JFSLG0-fcf3c5c95bbe-192',
     timezone: 'America/New_York',
   },
   {

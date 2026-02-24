@@ -45,6 +45,12 @@ export interface IntercomTeamMember {
   avatar?: {
     image_url?: string
   }
+  away_mode_enabled?: boolean
+  away_status_reason?: {
+    id?: string | number
+    label?: string
+    name?: string
+  } | null
   type?: string
 }
 
@@ -55,6 +61,8 @@ export interface IntercomDataState {
   error: string | null
   lastUpdated: Date | null
 }
+
+const AUTH_REQUIRED_ERROR = 'AUTH_REQUIRED'
 
 export interface UseIntercomDataOptions {
   /** Whether to skip closed conversations in initial fetch (faster load) */
@@ -121,6 +129,17 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
 
       const fetchDuration = performance.now() - fetchStartTime
       if (LOG) console.log(`[useIntercomData] API call took ${Math.round(fetchDuration)}ms`)
+
+      if (response.status === 401) {
+        setState(prev => ({
+          ...prev,
+          conversations: [],
+          teamMembers: [],
+          loading: false,
+          error: AUTH_REQUIRED_ERROR,
+        }))
+        return
+      }
 
       if (!response.ok) {
         const errorText = await response.text()

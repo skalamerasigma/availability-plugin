@@ -1,10 +1,10 @@
 export function Legend() {
   const items = [
     { ringColor: 'green', label: 'Available' },
-    { ringColor: 'yellow', label: 'On a break' },
-    { ringColor: 'orange', label: 'Status unclear' },
-    { ringColor: 'red', label: 'Off Chat' },
-    { ringColor: 'zoom', label: 'On a zoom' },
+    { ringColor: 'yellow', label: 'Away' },
+    { ringColor: 'red', label: 'Scheduled but Away' },
+    { ringColor: 'zoom', label: 'Zoom' },
+    { ringColor: 'meeting', label: 'In a meeting' },
     { ringColor: 'purple', label: 'Not scheduled' },
   ]
 

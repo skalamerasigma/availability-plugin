@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { TEAM_MEMBERS } from '../data/teamMembers'
 import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
@@ -73,26 +73,10 @@ interface TSEConversationTableProps {
   closedColumn?: string
   // New props for Intercom data integration
   intercomConversations?: IntercomConversation[]
+  intercomClosedConversations?: IntercomConversation[]
   intercomTeamMembers?: IntercomTeamMember[]
   lastUpdated?: Date | null
 }
-
-// TSEs to exclude from the table
-const EXCLUDED_TSE_NAMES = [
-  'Holly',
-  'Holly Coxon',
-  'Stephen',
-  'Stephen Skalamera',
-  'Grace',
-  'Grace Liu',
-  'Zen',
-  'Zen Lee',
-  'Chetana',
-  'Chetana Shinde',
-  'svc-prd-tse-intercom SVC',
-  'TSE 6519361',
-  'Zen Junior',
-]
 
 /**
  * Extract first name from a full name
@@ -100,19 +84,6 @@ const EXCLUDED_TSE_NAMES = [
 function getFirstName(fullName: string): string {
   if (!fullName) return fullName
   return fullName.split(' ')[0]
-}
-
-/**
- * Check if a name should be excluded (checks both full name and first name)
- */
-function isExcludedTSE(name: string): boolean {
-  if (!name) return false
-  // Check exact match
-  if (EXCLUDED_TSE_NAMES.includes(name)) return true
-  // Check first name match
-  const firstName = getFirstName(name)
-  if (EXCLUDED_TSE_NAMES.includes(firstName)) return true
-  return false
 }
 
 /**
@@ -125,17 +96,7 @@ function getSnoozeWorkflow(conv: IntercomConversation): string | null {
 }
 
 /**
- * Check if a conversation has a "waiting on customer" workflow
- * These should be excluded from the snoozed count
- */
-function hasWaitingOnCustomerWorkflow(conv: IntercomConversation): boolean {
-  const workflow = getSnoozeWorkflow(conv)
-  return workflow === 'Waiting On Customer - Resolved' || 
-         workflow === 'Waiting On Customer - Unresolved'
-}
-
-/**
- * Check if a timestamp is from today (in PT timezone)
+ * Check if a timestamp is from today (in UTC timezone)
  */
 function isToday(timestamp: number | undefined): boolean {
   if (!timestamp) return false
@@ -144,23 +105,23 @@ function isToday(timestamp: number | undefined): boolean {
   const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000
   const date = new Date(timestampMs)
   
-  // Get today's date in PT timezone
+  // Get today's date in UTC timezone
   const now = new Date()
-  const ptFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Los_Angeles',
+  const utcFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   })
   
-  const todayPT = ptFormatter.format(now)
-  const datePT = ptFormatter.format(date)
+  const todayUTC = utcFormatter.format(now)
+  const dateUTC = utcFormatter.format(date)
   
-  return todayPT === datePT
+  return todayUTC === dateUTC
 }
 
 /**
- * Check if a conversation was closed today (in PT timezone)
+ * Check if a conversation was closed today (UTC timezone)
  */
 function isClosedToday(conv: IntercomConversation): boolean {
   return isToday(conv.closed_at)
@@ -168,17 +129,11 @@ function isClosedToday(conv: IntercomConversation): boolean {
 
 /**
  * Check if a conversation was "taken" today
- * A chat is "taken" if it was created today AND has an admin reply today
+ * A chat is "taken" if its first admin reply happened today (UTC),
+ * regardless of the conversation's current status.
  */
 function isChatTakenToday(conv: IntercomConversation): boolean {
-  const createdToday = isToday(conv.created_at)
-  if (!createdToday) return false
-  
-  // Check if there's an admin reply (first or last)
-  const adminReplyAt = conv.statistics?.first_admin_reply_at || conv.statistics?.last_admin_reply_at
-  const repliedToday = isToday(adminReplyAt)
-  
-  return repliedToday
+  return isToday(conv.statistics?.first_admin_reply_at)
 }
 
 /**
@@ -186,7 +141,7 @@ function isChatTakenToday(conv: IntercomConversation): boolean {
  * - Open: count of open conversations
  * - Snoozed: count of snoozed conversations (excluding waiting-on-customer workflows)
  * - Closed: count of closed conversations for current day
- * - Chats Taken: count of conversations created today and responded to today
+ * - Chats Taken: count of conversations with first admin reply today (UTC)
  */
 function calculateTSECountsFromIntercom(
   conversations: IntercomConversation[],
@@ -215,9 +170,6 @@ function calculateTSECountsFromIntercom(
       const teamMember = teamMembers.find(m => String(m.id) === idStr)
       const name = teamMember?.name || `TSE ${idStr}`
       
-      // Skip excluded TSEs
-      if (isExcludedTSE(name)) return
-      
       tseMap.set(idStr, { 
         name,
         id: idStr,
@@ -238,10 +190,8 @@ function calculateTSECountsFromIntercom(
       // Open: count of open conversations
       counts.open++
     } else if (isSnoozed) {
-      // Snoozed: exclude conversations with waiting-on-customer workflows
-      if (!hasWaitingOnCustomerWorkflow(conv)) {
-        counts.snoozed++
-      }
+      // Snoozed: count any conversation currently in a snoozed state
+      counts.snoozed++
     } else if (state === 'closed') {
       // Closed: only count if closed today
       if (isClosedToday(conv)) {
@@ -249,7 +199,7 @@ function calculateTSECountsFromIntercom(
       }
     }
     
-    // Chats Taken: conversations created today and responded to today
+    // Chats Taken: first admin reply happened today (UTC), regardless of status
     if (isChatTakenToday(conv)) {
       counts.chatsTaken++
     }
@@ -257,7 +207,6 @@ function calculateTSECountsFromIntercom(
   
   // Convert to array
   const result: TSEConversationData[] = Array.from(tseMap.entries())
-    .filter(([_, item]) => !isExcludedTSE(item.name))
     .map(([id, item]) => ({
       tseName: getFirstName(item.name),
       fullName: item.name,
@@ -377,6 +326,16 @@ function formatConversationDate(timestamp: number | undefined): string {
 }
 
 /**
+ * Coin event returned by /api/intercom/coins/tse-details
+ */
+interface CoinEvent {
+  conversationId: string
+  waitBucket: '5_to_10' | '10_plus'
+  waitSeconds: number
+  awardedAt: string
+}
+
+/**
  * TSE Details Modal Component
  */
 function TSEDetailsModal({ 
@@ -399,6 +358,33 @@ function TSEDetailsModal({
     closed, 
     taken 
   } = tseData
+
+  // Fetch coin events for this TSE
+  const [coinEvents, setCoinEvents] = useState<CoinEvent[]>([])
+  const [coinLoading, setCoinLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function fetchCoinEvents() {
+      setCoinLoading(true)
+      try {
+        const response = await fetch(
+          `${QHM_API_BASE_URL}/api/intercom/coins/tse-details?tseId=${encodeURIComponent(tseData.id)}`,
+          { credentials: 'include' }
+        )
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data = await response.json()
+        if (!cancelled) setCoinEvents(Array.isArray(data?.events) ? data.events : [])
+      } catch (err) {
+        console.warn('[TSEDetailsModal] Failed to fetch coin events:', err)
+        if (!cancelled) setCoinEvents([])
+      } finally {
+        if (!cancelled) setCoinLoading(false)
+      }
+    }
+    fetchCoinEvents()
+    return () => { cancelled = true }
+  }, [tseData.id])
   
   // Get author email from conversation
   const getAuthorEmail = (conv: IntercomConversation): string => {
@@ -524,6 +510,19 @@ function TSEDetailsModal({
             </div>
             <div className="tse-modal-stat-label">Assigned Today</div>
           </div>
+          <div className="tse-modal-stat">
+            <div className="tse-modal-stat-value" style={{ color: '#f59e0b' }}>
+              {coinLoading ? '...' : coinEvents.length}
+            </div>
+            <div className="tse-modal-stat-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+              <img
+                src="https://res.cloudinary.com/doznvxtja/image/upload/v1771295414/Add_a_subheading_2_kkiweg.svg"
+                alt="Q-coin"
+                style={{ width: '14px', height: '14px' }}
+              />
+              Q-Coins Earned Today
+            </div>
+          </div>
         </div>
         
         {/* Conversation Lists */}
@@ -562,6 +561,87 @@ function TSEDetailsModal({
             </h3>
             {renderConversationList(waitingOnTSE, 'No conversations')}
           </div>
+
+          <div className="tse-modal-section">
+            <h3 className="tse-modal-section-title">
+              Closed Today <span className="tse-modal-section-count">({closed.length})</span>
+            </h3>
+            {renderConversationList(closed, 'No conversations closed today')}
+          </div>
+
+          {/* Coin-Earning Chats */}
+          <div className="tse-modal-section">
+            <h3 className="tse-modal-section-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <img
+                src="https://res.cloudinary.com/doznvxtja/image/upload/v1771295414/Add_a_subheading_2_kkiweg.svg"
+                alt="Q-coin"
+                style={{ width: '18px', height: '18px', verticalAlign: 'middle' }}
+              />
+              Q-Coin Earning Chats Today <span className="tse-modal-section-count">({coinLoading ? '...' : coinEvents.length})</span>
+            </h3>
+            {coinLoading ? (
+              <div className="tse-modal-empty" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading...</div>
+            ) : coinEvents.length === 0 ? (
+              <div className="tse-modal-empty">No Q-Coins earned today</div>
+            ) : (
+              <div className="tse-modal-conversation-list">
+                {coinEvents.map((ev, idx) => {
+                  const waitMin = Math.floor(ev.waitSeconds / 60)
+                  const waitSec = ev.waitSeconds % 60
+                  const bucketLabel = ev.waitBucket === '10_plus' ? '10+ min' : '5–10 min'
+                  const bucketColor = ev.waitBucket === '10_plus' ? '#ef4444' : '#eab308'
+
+                  return (
+                    <div key={ev.conversationId || idx} className="tse-modal-conversation-item">
+                      <div style={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '4px',
+                        padding: '4px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <img
+                          src="https://res.cloudinary.com/doznvxtja/image/upload/v1767370490/Untitled_design_14_wkkhe3.svg"
+                          alt="Intercom"
+                          className="tse-modal-conv-icon"
+                        />
+                      </div>
+                      <div className="tse-modal-conv-content">
+                        <div className="tse-modal-conv-header">
+                          <a
+                            href={`${INTERCOM_BASE_URL}${ev.conversationId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="tse-modal-conv-id-link"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {ev.conversationId}
+                          </a>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: bucketColor,
+                              background: `${bucketColor}18`,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              marginLeft: '6px',
+                            }}
+                          >
+                            {bucketLabel}
+                          </span>
+                        </div>
+                        <div className="tse-modal-conv-email" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Waited {waitMin}m {waitSec > 0 ? `${waitSec}s` : ''} before assignment
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -571,7 +651,6 @@ function TSEDetailsModal({
 // Generate mock conversation data for TSEs (fallback)
 function generateMockConversationData(): TSEConversationData[] {
   const tseNames = TEAM_MEMBERS
-    .filter(member => !isExcludedTSE(member.name))
   
   return tseNames.map((member, idx) => {
     const random = Math.random()
@@ -607,7 +686,7 @@ function generateMockConversationData(): TSEConversationData[] {
   })
 }
 
-type SortColumn = 'tse' | 'open' | 'snoozed' | 'closed' | 'assigned'
+type SortColumn = 'tse' | 'openSnoozed' | 'closed' | 'assigned'
 type SortDirection = 'asc' | 'desc'
 
 export function TSEConversationTable({ 
@@ -620,13 +699,12 @@ export function TSEConversationTable({
   closedColumn: _closedColumn,
   // New Intercom data props
   intercomConversations,
+  intercomClosedConversations,
   intercomTeamMembers,
   lastUpdated,
 }: TSEConversationTableProps) {
   const [conversationData, setConversationData] = useState<TSEConversationData[]>([])
   const [loading, setLoading] = useState(true)
-  const [currentHalf, setCurrentHalf] = useState<0 | 1>(0)
-  const [isTransitioning, setIsTransitioning] = useState(false)
   const [_error, setError] = useState<string | null>(null)
   const [selectedTSE, setSelectedTSE] = useState<TSEDetailData | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -641,19 +719,51 @@ export function TSEConversationTable({
     if (!intercomConversations?.length || !intercomTeamMembers?.length) {
       return null
     }
+
+    // Build a de-duplicated set of conversations across open/snoozed + closed
+    // so "Assigned Today" can count first replies regardless of current status.
+    const conversationsForCounts: IntercomConversation[] = []
+    const seenConversationIds = new Set<string>()
+    const allConversations = [...intercomConversations, ...(intercomClosedConversations || [])]
+
+    allConversations.forEach((conv) => {
+      const uniqueId = String(conv.conversation_id || conv.id || '')
+      if (!uniqueId || seenConversationIds.has(uniqueId)) return
+      seenConversationIds.add(uniqueId)
+      conversationsForCounts.push(conv)
+    })
     
     if (LOG) {
       console.log('[TSEConversationTable] Calculating counts from Intercom data:', {
         conversationsCount: intercomConversations.length,
+        closedConversationsCount: intercomClosedConversations?.length ?? 0,
         teamMembersCount: intercomTeamMembers.length,
+        conversationsForAssignedToday: conversationsForCounts.length,
       })
     }
     
-    const counts = calculateTSECountsFromIntercom(intercomConversations, intercomTeamMembers)
+    const counts = calculateTSECountsFromIntercom(conversationsForCounts, intercomTeamMembers)
+    
+    // Merge closed-today counts from the separate closed conversations dataset
+    if (intercomClosedConversations?.length) {
+      const closedByTSE = new Map<string, number>()
+      intercomClosedConversations.forEach(conv => {
+        const assigneeId = conv.admin_assignee_id || 
+          (conv.admin_assignee && typeof conv.admin_assignee === 'object' ? conv.admin_assignee.id : null)
+        if (!assigneeId) return
+        const idStr = String(assigneeId)
+        closedByTSE.set(idStr, (closedByTSE.get(idStr) ?? 0) + 1)
+      })
+      
+      counts.forEach(tse => {
+        const closedCount = closedByTSE.get(tse.tseId) ?? 0
+        tse.closedCount = closedCount
+      })
+    }
     
     if (LOG) console.log('[TSEConversationTable] Calculated TSE counts:', counts)
     return counts
-  }, [intercomConversations, intercomTeamMembers])
+  }, [intercomConversations, intercomClosedConversations, intercomTeamMembers])
 
   // Use Intercom data if available, otherwise fetch from API
   useEffect(() => {
@@ -695,7 +805,6 @@ export function TSEConversationTable({
         if (!item.tse || !item.tse.trim()) return
         
         const cleanName = item.tse.trim()
-        if (isExcludedTSE(cleanName)) return
         
         processedData.push({
           tseName: getFirstName(cleanName),
@@ -722,8 +831,7 @@ export function TSEConversationTable({
       setError(err instanceof Error ? err.message : 'Failed to fetch')
       
       // Fallback to mock data on error
-      const filteredData = mockData.filter(row => !isExcludedTSE(row.tseName) && !isExcludedTSE(row.fullName))
-      const sortedData = filteredData.sort((a, b) => {
+      const sortedData = [...mockData].sort((a, b) => {
         const sumA = a.openCount + a.snoozedCount
         const sumB = b.openCount + b.snoozedCount
         return sumB - sumA
@@ -767,14 +875,10 @@ export function TSEConversationTable({
 
       switch (sortColumn) {
         case 'tse':
-          // Alphabetical sort for TSE names
           comparison = a.tseName.localeCompare(b.tseName)
           break
-        case 'open':
-          comparison = a.openCount - b.openCount
-          break
-        case 'snoozed':
-          comparison = a.snoozedCount - b.snoozedCount
+        case 'openSnoozed':
+          comparison = (a.openCount + a.snoozedCount) - (b.openCount + b.snoozedCount)
           break
         case 'closed':
           comparison = a.closedCount - b.closedCount
@@ -790,39 +894,13 @@ export function TSEConversationTable({
     return sorted
   }, [conversationData, sortColumn, sortDirection])
 
-  // Split data into two halves
-  const [firstHalf, secondHalf] = useMemo(() => {
-    const midpoint = Math.ceil(sortedData.length / 2)
-    return [
-      sortedData.slice(0, midpoint),
-      sortedData.slice(midpoint)
-    ]
+  // Show all TSEs
+  // Duplicate data to create a seamless infinite scrolling effect if we have enough items
+  const displayedData = useMemo(() => {
+    if (sortedData.length <= 8) return sortedData;
+    // Append the first few items to the end to make the loop seamless
+    return [...sortedData, ...sortedData.slice(0, 8)];
   }, [sortedData])
-
-  // Rotate between halves every 10 seconds
-  useEffect(() => {
-    if (sortedData.length === 0 || firstHalf.length === 0 || secondHalf.length === 0) return
-
-    const interval = setInterval(() => {
-      // Start fade out
-      setIsTransitioning(true)
-      
-      // After fade out completes, switch to the other half
-      setTimeout(() => {
-        setCurrentHalf(prev => (prev === 0 ? 1 : 0) as 0 | 1)
-        
-        // Start fade in
-        setTimeout(() => {
-          setIsTransitioning(false)
-        }, 50) // Small delay to ensure DOM update
-      }, 300) // Match CSS transition duration
-    }, 10000) // 10 seconds between shifts
-
-    return () => clearInterval(interval)
-  }, [sortedData.length, firstHalf.length, secondHalf.length])
-
-  // Get the currently displayed half
-  const displayedData = currentHalf === 0 ? firstHalf : secondHalf
 
   // Color coding function
   const getValueColor = (value: number): string => {
@@ -846,11 +924,23 @@ export function TSEConversationTable({
   // Handle TSE name click
   const handleTSEClick = (row: TSEConversationData) => {
     if (!intercomConversations) return
+
+    // Match table logic by including closed conversations too.
+    const modalConversations: IntercomConversation[] = []
+    const seenConversationIds = new Set<string>()
+    const allConversations = [...intercomConversations, ...(intercomClosedConversations || [])]
+
+    allConversations.forEach((conv) => {
+      const uniqueId = String(conv.conversation_id || conv.id || '')
+      if (!uniqueId || seenConversationIds.has(uniqueId)) return
+      seenConversationIds.add(uniqueId)
+      modalConversations.push(conv)
+    })
     
     const tseData = getTSEConversations(
       row.tseId,
       row.fullName || row.tseName,
-      intercomConversations
+      modalConversations
     )
     
     setSelectedTSE(tseData)
@@ -862,6 +952,90 @@ export function TSEConversationTable({
     setIsModalOpen(false)
     setSelectedTSE(null)
   }
+
+  // Auto-scroll refs and state
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const scrollAnimRef = useRef<number | null>(null)
+  const [isHovered, setIsHovered] = useState(false)
+
+  // Continuous auto-scroll effect
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || displayedData.length <= 8 || isHovered) {
+      if (scrollAnimRef.current) {
+        cancelAnimationFrame(scrollAnimRef.current)
+        scrollAnimRef.current = null
+      }
+      return
+    }
+
+    const SCROLL_SPEED = 0.5 // pixels per frame (~30px/sec at 60fps)
+    const PAUSE_AT_TOP_MS = 3000
+
+    let paused = false
+    let pauseTimeout: ReturnType<typeof setTimeout> | null = null
+
+    const step = () => {
+      if (!container || isHovered) {
+        scrollAnimRef.current = requestAnimationFrame(step)
+        return
+      }
+
+      container.scrollTop += SCROLL_SPEED
+
+      // Calculate total scrollable height without the duplicated items
+      // We know we duplicated the first 8 items, and each row is roughly 58px tall.
+      // A more robust way is to check the scroll position relative to the scrollHeight
+      // Use offsetHeight as rowHeight can vary slightly
+      const containerEl = container;
+      const originalCount = sortedData.length;
+      
+      // Calculate the approximate height of the original content
+      // The total scrollable height minus the height of the duplicated items
+      // We duplicate the first 8 items (or originalCount if < 8, but we only auto-scroll if > 8)
+      const numDuplicated = Math.min(8, originalCount);
+      
+      // The most reliable way is to let it scroll until it reaches the point where 
+      // the first duplicated element is exactly at the top of the container.
+      // Since all rows are roughly the same height, the proportion of scroll is:
+      const totalRows = originalCount + numDuplicated;
+      
+      // At the exact moment the original content is completely scrolled up, 
+      // the scroll position is exactly (originalCount / totalRows) of the total scrollable area
+      const resetThreshold = (originalCount / totalRows) * containerEl.scrollHeight;
+
+      // Make sure we have a little buffer in case scrollHeight updates dynamically
+      // The browser's maximum scroll allowed is scrollHeight - clientHeight
+      // If we somehow hit the bottom without triggering the reset, forcefully reset to avoid freezing
+      const maxPossibleScroll = containerEl.scrollHeight - containerEl.clientHeight;
+      
+      if (container.scrollTop >= resetThreshold || (container.scrollTop >= maxPossibleScroll - 2)) {
+        // Reset precisely to the equivalent position at the top
+        container.scrollTop = container.scrollTop >= resetThreshold 
+          ? container.scrollTop - resetThreshold 
+          : 0;
+      }
+      
+      // Legacy "pause at bottom" logic replaced with infinite scroll
+      if (!paused) {
+        scrollAnimRef.current = requestAnimationFrame(step)
+      }
+    }
+
+    // Start after a brief delay
+    const startTimeout = setTimeout(() => {
+      scrollAnimRef.current = requestAnimationFrame(step)
+    }, PAUSE_AT_TOP_MS)
+
+    return () => {
+      clearTimeout(startTimeout)
+      if (pauseTimeout) clearTimeout(pauseTimeout)
+      if (scrollAnimRef.current) {
+        cancelAnimationFrame(scrollAnimRef.current)
+        scrollAnimRef.current = null
+      }
+    }
+  }, [displayedData.length, isHovered])
 
   // Render sort indicator
   const renderSortIndicator = (column: SortColumn) => {
@@ -907,21 +1081,28 @@ export function TSEConversationTable({
       borderRadius: '8px',
       padding: '16px',
       boxShadow: 'var(--shadow-sm)',
-      height: '100%',
+      height: 'auto',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden'
     }}>
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        overflowX: 'auto'
-      }}>
+      <div
+        ref={scrollContainerRef}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          maxHeight: '464px', // ~8 rows at ~58px each
+          scrollBehavior: 'auto',
+        }}
+      >
         <table style={{
           width: '100%',
-          minWidth: '300px',
           borderCollapse: 'collapse',
-          fontSize: '16px'
+          fontSize: '15px',
+          tableLayout: 'fixed'
         }}>
         <thead>
           <tr style={{
@@ -935,131 +1116,72 @@ export function TSEConversationTable({
               onClick={() => handleSort('tse')}
               style={{
                 textAlign: 'left',
-                padding: '10px 8px',
+                padding: '8px 4px',
                 fontWeight: 600,
-                color: 'var(--text-primary)',
-                fontSize: '15px',
+                fontSize: '16px',
                 whiteSpace: 'nowrap',
-                minWidth: '70px',
-                maxWidth: '80px',
+                width: '56px',
                 cursor: 'pointer',
                 userSelect: 'none',
-                transition: 'background-color 0.15s ease'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
-              }}
+              title="TSE"
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                TSE
-                {renderSortIndicator('tse')}
+              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                👤{renderSortIndicator('tse')}
               </span>
             </th>
             <th 
-              onClick={() => handleSort('open')}
+              onClick={() => handleSort('openSnoozed')}
               style={{
-                textAlign: 'right',
-                padding: '10px 8px',
+                textAlign: 'center',
+                padding: '8px 2px',
                 fontWeight: 600,
-                color: 'var(--text-primary)',
                 fontSize: '15px',
                 whiteSpace: 'nowrap',
-                minWidth: '50px',
+                width: '56px',
                 cursor: 'pointer',
                 userSelect: 'none',
-                transition: 'background-color 0.15s ease'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
-              }}
+              title="Open / Snoozed"
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
-                Open
-                {renderSortIndicator('open')}
-              </span>
-            </th>
-            <th 
-              onClick={() => handleSort('snoozed')}
-              style={{
-                textAlign: 'right',
-                padding: '10px 8px',
-                fontWeight: 600,
-                color: 'var(--text-primary)',
-                fontSize: '15px',
-                whiteSpace: 'nowrap',
-                minWidth: '60px',
-                cursor: 'pointer',
-                userSelect: 'none',
-                transition: 'background-color 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
-              }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
-                Snoozed
-                {renderSortIndicator('snoozed')}
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                📬/😴{renderSortIndicator('openSnoozed')}
               </span>
             </th>
             <th 
               onClick={() => handleSort('closed')}
               style={{
-                textAlign: 'right',
-                padding: '10px 8px',
+                textAlign: 'center',
+                padding: '8px 2px',
                 fontWeight: 600,
-                color: 'var(--text-primary)',
-                fontSize: '15px',
+                fontSize: '16px',
                 whiteSpace: 'nowrap',
-                minWidth: '60px',
+                width: '42px',
                 cursor: 'pointer',
                 userSelect: 'none',
-                transition: 'background-color 0.15s ease'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
-              }}
+              title="Closed Today"
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
-                Closed
-                {renderSortIndicator('closed')}
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                ✅{renderSortIndicator('closed')}
               </span>
             </th>
             <th 
               onClick={() => handleSort('assigned')}
               style={{
-                textAlign: 'right',
-                padding: '10px 8px',
+                textAlign: 'center',
+                padding: '8px 2px',
                 fontWeight: 600,
-                color: 'var(--text-primary)',
-                fontSize: '15px',
+                fontSize: '16px',
                 whiteSpace: 'nowrap',
-                minWidth: '60px',
+                width: '42px',
                 cursor: 'pointer',
                 userSelect: 'none',
-                transition: 'background-color 0.15s ease'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-card)'
-              }}
+              title="Assigned Today"
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
-                Assigned
-                {renderSortIndicator('assigned')}
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                💬{renderSortIndicator('assigned')}
               </span>
             </th>
           </tr>
@@ -1067,73 +1189,82 @@ export function TSEConversationTable({
         <tbody>
           {displayedData.map((row, index) => (
             <tr
-              key={row.tseName}
+              key={`${row.tseName}-${index}`}
               style={{
                 borderBottom: index < displayedData.length - 1 ? '1px solid var(--border-color-light)' : 'none',
-                opacity: isTransitioning ? 0 : 1,
-                transition: 'opacity 0.3s ease-in-out'
               }}
             >
               <td 
                 style={{
-                  padding: '8px 8px',
-                  color: 'var(--status-blue)',
-                  fontWeight: 500,
-                  fontSize: '16px',
-                  maxWidth: '80px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  padding: '6px 4px',
                   cursor: intercomConversations ? 'pointer' : 'default',
-                  transition: 'color 0.15s ease'
                 }}
                 onClick={() => handleTSEClick(row)}
-                onMouseEnter={(e) => {
-                  if (intercomConversations) {
-                    e.currentTarget.style.color = '#1d4ed8'
-                    e.currentTarget.style.textDecoration = 'underline'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--status-blue)'
-                  e.currentTarget.style.textDecoration = 'none'
-                }}
+                title={row.fullName || row.tseName}
               >
-                {row.tseName}
+                {(() => {
+                  const member = TEAM_MEMBERS.find(m =>
+                    m.name.toLowerCase() === (row.fullName || row.tseName).toLowerCase() ||
+                    m.name.toLowerCase() === row.tseName.toLowerCase() ||
+                    m.name.split(' ')[0].toLowerCase() === row.tseName.toLowerCase()
+                  )
+                  const avatarUrl = member?.avatar
+                  return avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt={row.tseName}
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        display: 'block',
+                      }}
+                    />
+                  ) : (
+                    <span style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '50%',
+                      background: '#94a3b8',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                    }}>
+                      {row.tseName.charAt(0)}
+                    </span>
+                  )
+                })()}
               </td>
               <td style={{
-                padding: '8px 8px',
-                textAlign: 'right',
-                color: getValueColor(row.openCount),
+                padding: '6px 2px',
+                textAlign: 'center',
                 fontWeight: 600,
-                fontSize: '16px'
+                fontSize: '15px',
+                whiteSpace: 'nowrap',
               }}>
-                {row.openCount}
+                <span style={{ color: getValueColor(row.openCount) }}>{row.openCount}</span>
+                <span style={{ color: 'var(--text-muted)', margin: '0 2px' }}>/</span>
+                <span style={{ color: getValueColor(row.snoozedCount) }}>{row.snoozedCount}</span>
               </td>
               <td style={{
-                padding: '8px 8px',
-                textAlign: 'right',
-                color: getValueColor(row.snoozedCount),
-                fontWeight: 600,
-                fontSize: '16px'
-              }}>
-                {row.snoozedCount}
-              </td>
-              <td style={{
-                padding: '8px 8px',
-                textAlign: 'right',
+                padding: '6px 2px',
+                textAlign: 'center',
                 color: 'var(--status-gray)',
                 fontWeight: 600,
-                fontSize: '16px'
+                fontSize: '15px'
               }}>
                 {row.closedCount}
               </td>
               <td style={{
-                padding: '8px 8px',
-                textAlign: 'right',
+                padding: '6px 2px',
+                textAlign: 'center',
                 color: 'var(--status-blue)',
                 fontWeight: 600,
-                fontSize: '16px'
+                fontSize: '15px'
               }}>
                 {row.chatsTakenCount}
               </td>

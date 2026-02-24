@@ -5,6 +5,12 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
   server: {
     port: 3000,
+    proxy: {
+      '/api/intercom/available-tses': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      }
+    }
   },
   esbuild: {
     // Avoid leaking internal details via verbose console logging in prod bundles.

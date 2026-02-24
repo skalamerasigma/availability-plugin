@@ -34,11 +34,11 @@ export function getQhmApiBaseUrl(): string {
 
   const resolved = fromRuntime || fromBuild
 
-  // In production we intentionally do NOT silently fall back to Vercel:
-  // if this isn't configured, we'd accidentally keep using the old endpoints.
+  // In production we intentionally do NOT silently fall back:
+  // if this isn't configured, we'd accidentally use the wrong endpoints.
   if (!resolved) {
     if (import.meta.env.DEV) {
-      return 'https://queue-health-monitor.vercel.app'
+      return 'https://queue-health-monitor-mlxsiuxktq-uc.a.run.app'
     }
     throw new Error('Missing QHM_API_BASE_URL (set Cloud Run env var QHM_API_BASE_URL)')
   }

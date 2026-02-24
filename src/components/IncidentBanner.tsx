@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
 
 interface TrendingData {
@@ -15,6 +15,18 @@ interface OnCallPerson {
   endAt?: string
 }
 
+interface Incident {
+  id: string
+  name: string
+  severity: string
+  status: string
+  statusCategory: string
+  createdAt: string
+  updatedAt: string
+  permalink?: string
+  incidentLead?: string | null
+}
+
 interface TeamMember {
   id: string | number
   name: string
@@ -25,12 +37,6 @@ interface TeamMember {
 }
 
 interface IncidentBannerProps {
-  incidentsData: Record<string, unknown> | null | undefined
-  incidentsColumns: Record<string, { name: string }> | undefined
-  incidentDetailsColumn: string | undefined
-  sevStatusColumn: string | undefined
-  incidentCreatedAtColumn: string | undefined
-  incidentUpdatedAtColumn: string | undefined
   chatCount?: number
   closedCount?: number
   chatsTrending?: TrendingData | null
@@ -41,28 +47,14 @@ interface IncidentBannerProps {
   availableCapacity?: number
 }
 
-interface Incident {
-  incidentDetails: string
-  sevStatus: string
-  incidentCreatedAt: string
-  incidentUpdatedAt: string
-}
-
 const INCIDENT_IO_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769535474/Untitled_design_30_w9bwzy.svg'
 const INCIDENT_IO_LOGO_URL_DARK = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769843507/SQL_16_lighjh.svg'
 const DASHBOARD_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769680535/SQL_14_ielazn.svg'
 const DASHBOARD_LOGO_URL_DARK = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769843414/SQL_15_upfjgr.svg'
-const ROTATION_INTERVAL_MS = 10000 // 10 seconds
 const QHM_API_BASE_URL = getQhmApiBaseUrl()
 const LOG = isDebugEnabled()
 
 export function IncidentBanner({
-  incidentsData,
-  incidentsColumns,
-  incidentDetailsColumn,
-  sevStatusColumn,
-  incidentCreatedAtColumn,
-  incidentUpdatedAtColumn,
   chatCount,
   closedCount,
   chatsTrending,
@@ -72,10 +64,13 @@ export function IncidentBanner({
   unassignedCount,
   availableCapacity,
 }: IncidentBannerProps) {
-  const [currentIndex, setCurrentIndex] = useState(0)
   const [onCallData, setOnCallData] = useState<OnCallPerson[]>([])
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [incidentIndex, setIncidentIndex] = useState(0)
   const onCallScrollRef = useRef<HTMLDivElement>(null)
   const scrollIntervalRef = useRef<number | null>(null)
+  const incidentDescScrollRef = useRef<HTMLDivElement>(null)
+  const incidentAdvanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isScrollingPaused, setIsScrollingPaused] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return document.documentElement.classList.contains('dark-mode')
@@ -118,12 +113,105 @@ export function IncidentBanner({
     }
   }, [])
 
-  // Fetch on-call data on mount and every 5 minutes
+  // Fetch active incidents from Incident.io
+  const fetchIncidents = useCallback(async () => {
+    try {
+      const response = await fetch(`${QHM_API_BASE_URL}/api/incident-io/incidents`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      })
+      if (!response.ok) {
+        if (LOG) console.error('[IncidentBanner] Failed to fetch incidents:', response.status)
+        return
+      }
+      const data = await response.json()
+      if (LOG) console.log('[IncidentBanner] Incidents count:', data.incidents?.length || 0)
+      setIncidents(data.incidents || [])
+    } catch (error) {
+      if (LOG) console.error('[IncidentBanner] Error fetching incidents:', error)
+    }
+  }, [])
+
+  // Fetch on-call + incidents on mount and every 5 minutes
   useEffect(() => {
     fetchOnCallData()
-    const interval = setInterval(fetchOnCallData, 5 * 60 * 1000) // 5 minutes
+    fetchIncidents()
+    const interval = setInterval(() => {
+      fetchOnCallData()
+      fetchIncidents()
+    }, 5 * 60 * 1000) // 5 minutes
     return () => clearInterval(interval)
   }, [fetchOnCallData])
+
+  // Reset incident index when incidents list changes
+  useEffect(() => {
+    setIncidentIndex(0)
+  }, [incidents])
+
+  // Advance to next incident only after description scroll completes (or min display time for short text)
+  const SCROLL_SPEED_PX_PER_MS = 0.02 // ~20px per second (half speed)
+  const MIN_DISPLAY_MS = 4000
+  const PAUSE_AT_END_MS = 1500
+
+  useEffect(() => {
+    if (incidents.length <= 1) return
+
+    let cancelled = false
+
+    const advanceToNext = () => {
+      if (!cancelled) setIncidentIndex((prev) => (prev + 1) % incidents.length)
+    }
+
+    const scheduleAdvance = () => {
+      if (!cancelled) {
+        incidentAdvanceTimeoutRef.current = setTimeout(advanceToNext, PAUSE_AT_END_MS)
+      }
+    }
+
+    const el = incidentDescScrollRef.current
+    if (!el) {
+      incidentAdvanceTimeoutRef.current = setTimeout(advanceToNext, MIN_DISPLAY_MS)
+      return () => {
+        cancelled = true
+        if (incidentAdvanceTimeoutRef.current) clearTimeout(incidentAdvanceTimeoutRef.current)
+      }
+    }
+
+    const scrollAmount = el.scrollWidth - el.clientWidth
+    if (scrollAmount <= 0) {
+      incidentAdvanceTimeoutRef.current = setTimeout(advanceToNext, MIN_DISPLAY_MS)
+      return () => {
+        cancelled = true
+        if (incidentAdvanceTimeoutRef.current) clearTimeout(incidentAdvanceTimeoutRef.current)
+      }
+    }
+
+    el.scrollLeft = 0
+    const durationMs = scrollAmount / SCROLL_SPEED_PX_PER_MS
+    const startTime = performance.now()
+
+    const animate = () => {
+      if (cancelled) return
+      const elapsed = performance.now() - startTime
+      const progress = Math.min(elapsed / durationMs, 1)
+      el.scrollLeft = scrollAmount * progress
+
+      if (progress < 1) {
+        requestAnimationFrame(animate)
+      } else {
+        scheduleAdvance()
+      }
+    }
+    requestAnimationFrame(animate)
+
+    return () => {
+      cancelled = true
+      if (incidentAdvanceTimeoutRef.current) clearTimeout(incidentAdvanceTimeoutRef.current)
+    }
+  }, [incidentIndex, incidents.length])
 
   // Auto-scroll on-call people horizontally with seamless loop
   useEffect(() => {
@@ -184,6 +272,20 @@ export function IncidentBanner({
   const getFirstName = (fullName: string): string => {
     if (!fullName) return fullName
     return fullName.split(' ')[0]
+  }
+
+  // Status badge background color (special badge style like SEV 1)
+  const getStatusBadgeColor = (status?: string, statusCategory?: string): string => {
+    const s = (status || '').toLowerCase()
+    const cat = (statusCategory || '').toLowerCase()
+    if (s.includes('progress') || cat === 'live') return '#3b82f6' // blue - In Progress
+    if (s.includes('triage') || cat === 'triage') return '#8b5cf6' // purple
+    if (s.includes('learning') || cat === 'learning') return '#06b6d4' // cyan
+    if (s.includes('closed') || cat === 'closed') return '#6b7280' // gray
+    if (s.includes('resolved')) return '#10b981' // green
+    if (s.includes('canceled') || s.includes('cancelled') || cat === 'canceled') return '#9ca3af' // light gray
+    if (s.includes('declined') || cat === 'declined') return '#ef4444' // red
+    return '#6366f1' // default indigo
   }
 
   // Map schedule name to badge label
@@ -266,254 +368,6 @@ export function IncidentBanner({
     return `${minutes}m ${remainingSeconds}s`
   }
 
-  // Process incidents (data is already filtered by date range in the source)
-  const activeIncidents = useMemo(() => {
-    console.log('[IncidentBanner] Processing incidents data:', {
-      hasIncidentsData: !!incidentsData,
-      incidentsDataKeys: incidentsData ? Object.keys(incidentsData) : [],
-      incidentsColumnsKeys: incidentsColumns ? Object.keys(incidentsColumns) : [],
-      incidentsColumnsNames: incidentsColumns 
-        ? Object.entries(incidentsColumns).map(([id, col]) => `${id}: "${col.name}"`)
-        : [],
-      incidentDetailsColumn,
-      sevStatusColumn,
-      incidentCreatedAtColumn,
-      incidentUpdatedAtColumn,
-    })
-
-    if (!incidentsData) {
-      console.log('[IncidentBanner] No incidentsData provided')
-      return []
-    }
-
-    if (!incidentDetailsColumn) {
-      console.log('[IncidentBanner] No incidentDetailsColumn configured')
-      return []
-    }
-
-    // Helper to find column ID from column name or use the value directly if it's already an ID
-    const findColumnId = (columnNameOrId: string | undefined): string | undefined => {
-      if (!columnNameOrId) return undefined
-      if (!incidentsColumns) return columnNameOrId // If no columns mapping, assume it's already an ID
-      
-      // First try direct match (in case it's already an ID)
-      if (incidentsData[columnNameOrId]) {
-        console.log(`[IncidentBanner] Found direct match for "${columnNameOrId}"`)
-        return columnNameOrId
-      }
-      
-      // Try exact column name match
-      let found = Object.entries(incidentsColumns).find(
-        ([_, col]) => col.name === columnNameOrId
-      )
-      if (found) {
-        console.log(`[IncidentBanner] Found exact name match: "${columnNameOrId}" -> "${found[0]}"`)
-        return found[0]
-      }
-      
-      // Try case-insensitive match
-      found = Object.entries(incidentsColumns).find(
-        ([_, col]) => col.name.toLowerCase() === columnNameOrId.toLowerCase()
-      )
-      if (found) {
-        console.log(`[IncidentBanner] Found case-insensitive match: "${columnNameOrId}" -> "${found[0]}"`)
-        return found[0]
-      }
-      
-      // Try partial match (for cases like "INCIDENT DETAILS" matching "Incident Details")
-      const normalizedSearch = columnNameOrId.toLowerCase().replace(/[^a-z0-9]/g, '')
-      found = Object.entries(incidentsColumns).find(
-        ([_, col]) => col.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSearch
-      )
-      if (found) {
-        console.log(`[IncidentBanner] Found normalized match: "${columnNameOrId}" -> "${found[0]}" (${found[1].name})`)
-        return found[0]
-      }
-      
-      console.log(`[IncidentBanner] No match found for "${columnNameOrId}". Available columns:`, 
-        Object.entries(incidentsColumns).map(([id, col]) => `${id}: "${col.name}"`))
-      return columnNameOrId // Return as-is, might work if it's an ID
-    }
-
-    const incidentDetailsId = findColumnId(incidentDetailsColumn)
-    const sevStatusId = findColumnId(sevStatusColumn)
-    const createdAtId = findColumnId(incidentCreatedAtColumn)
-    const updatedAtId = findColumnId(incidentUpdatedAtColumn)
-
-    console.log('[IncidentBanner] Resolved column IDs:', {
-      incidentDetailsId,
-      sevStatusId,
-      createdAtId,
-      updatedAtId,
-    })
-    
-    // Log what column names these IDs correspond to
-    if (incidentsColumns) {
-      console.log('[IncidentBanner] Column ID to name mapping:', {
-        incidentDetails: incidentDetailsId && incidentsColumns[incidentDetailsId] 
-          ? incidentsColumns[incidentDetailsId].name 
-          : 'NOT FOUND',
-        sevStatus: sevStatusId && incidentsColumns[sevStatusId] 
-          ? incidentsColumns[sevStatusId].name 
-          : 'NOT FOUND',
-        createdAt: createdAtId && incidentsColumns[createdAtId] 
-          ? incidentsColumns[createdAtId].name 
-          : 'NOT FOUND',
-        updatedAt: updatedAtId && incidentsColumns[updatedAtId] 
-          ? incidentsColumns[updatedAtId].name 
-          : 'NOT FOUND',
-      })
-    }
-
-    // Column IDs are used as keys in incidentsData
-    const incidentDetailsData = incidentDetailsId
-      ? (incidentsData[incidentDetailsId] as string[] | undefined)
-      : undefined
-    const sevStatusData = sevStatusId
-      ? (incidentsData[sevStatusId] as string[] | undefined)
-      : undefined
-    const createdAtData = createdAtId
-      ? (incidentsData[createdAtId] as string[] | undefined)
-      : undefined
-    const updatedAtData = updatedAtId
-      ? (incidentsData[updatedAtId] as string[] | undefined)
-      : undefined
-
-    console.log('[IncidentBanner] Column data:', {
-      incidentDetailsLength: incidentDetailsData?.length || 0,
-      incidentDetailsSample: incidentDetailsData?.slice(0, 2),
-      sevStatusLength: sevStatusData?.length || 0,
-      sevStatusSample: sevStatusData?.slice(0, 2),
-      createdAtLength: createdAtData?.length || 0,
-      createdAtSample: createdAtData?.slice(0, 2),
-      updatedAtLength: updatedAtData?.length || 0,
-      updatedAtSample: updatedAtData?.slice(0, 2),
-    })
-
-    if (!incidentDetailsData || incidentDetailsData.length === 0) {
-      console.log('[IncidentBanner] No incident details data found. Available data keys:', Object.keys(incidentsData))
-      return []
-    }
-
-    const result: Incident[] = []
-
-    incidentDetailsData.forEach((details, index) => {
-      // Convert to string and check if it's not empty
-      const detailsStr = details ? String(details).trim() : ''
-      if (!detailsStr) {
-        console.log(`[IncidentBanner] Skipping row ${index}: empty details`)
-        return
-      }
-
-      const incident = {
-        incidentDetails: detailsStr,
-        sevStatus: sevStatusData?.[index] ? String(sevStatusData[index]).trim() : '',
-        incidentCreatedAt: createdAtData?.[index] ? String(createdAtData[index]).trim() : '',
-        incidentUpdatedAt: updatedAtData?.[index] ? String(updatedAtData[index]).trim() : '',
-      }
-
-      console.log(`[IncidentBanner] Processing incident ${index}:`, {
-        details: incident.incidentDetails.substring(0, 50) + '...',
-        sevStatus: incident.sevStatus,
-        createdAt: incident.incidentCreatedAt,
-        updatedAt: incident.incidentUpdatedAt,
-      })
-
-      result.push(incident)
-    })
-
-    console.log('[IncidentBanner] Processed incidents:', result.length)
-    return result
-  }, [
-    incidentsData,
-    incidentsColumns,
-    incidentDetailsColumn,
-    sevStatusColumn,
-    incidentCreatedAtColumn,
-    incidentUpdatedAtColumn,
-  ])
-
-  // Rotate through incidents every 10 seconds
-  useEffect(() => {
-    if (activeIncidents.length <= 1) {
-      return // No need to rotate if 0 or 1 incident
-    }
-
-    const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % activeIncidents.length)
-    }, ROTATION_INTERVAL_MS)
-
-    return () => clearInterval(interval)
-  }, [activeIncidents.length])
-
-  console.log('[IncidentBanner] Rendering banner with', activeIncidents.length, 'incidents')
-
-  const currentIncident = activeIncidents.length > 0 ? activeIncidents[currentIndex] : null
-  const hasIncidents = activeIncidents.length > 0
-
-  // Format timestamps for display
-  const formatTimestamp = (timestampStr: string | number): string => {
-    if (!timestampStr && timestampStr !== 0) return ''
-    try {
-      let date: Date
-      
-      // Handle numeric timestamps (Unix milliseconds)
-      if (typeof timestampStr === 'number' || (!isNaN(Number(timestampStr)) && String(timestampStr).match(/^\d+$/))) {
-        const timestamp = typeof timestampStr === 'number' ? timestampStr : Number(timestampStr)
-        // Check if it's in seconds (less than year 2000) or milliseconds
-        date = new Date(timestamp > 946684800000 ? timestamp : timestamp * 1000)
-      } else {
-        // Handle string timestamps
-        let dateStr = String(timestampStr).trim()
-        
-        // Handle Snowflake timestamp format: "2026-01-15 13:24:13.292 -0800"
-        const timestampRegex = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+([+-]\d{4})$/
-        const match = dateStr.match(timestampRegex)
-        
-        if (match) {
-          // Convert to ISO format: YYYY-MM-DDTHH:MM:SS.SSS-HH:MM
-          const [, datePart, timePart, tzPart] = match
-          const tzFormatted = `${tzPart.slice(0, 3)}:${tzPart.slice(3)}`
-          dateStr = `${datePart}T${timePart}${tzFormatted}`
-        }
-        
-        date = new Date(dateStr)
-      }
-      
-      if (isNaN(date.getTime())) {
-        console.warn('[IncidentBanner] Invalid date:', timestampStr)
-        return String(timestampStr)
-      }
-      
-      return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      })
-    } catch (error) {
-      console.warn('[IncidentBanner] Error parsing date:', timestampStr, error)
-      return String(timestampStr)
-    }
-  }
-
-  // Get severity color based on SEV_STATUS
-  const getSeverityColor = (sevStatus: string): string => {
-    const statusLower = sevStatus.toLowerCase()
-    if (statusLower.includes('sev 1') || statusLower.includes('sev1') || statusLower.includes('𝗦𝗘𝗩 𝟏')) {
-      return '#ef4444' // red
-    }
-    if (statusLower.includes('sev 2') || statusLower.includes('sev2')) {
-      return '#f59e0b' // orange/amber
-    }
-    if (statusLower.includes('sev 3') || statusLower.includes('sev3')) {
-      return '#eab308' // yellow
-    }
-    return '#6366f1' // default purple/blue
-  }
-
-  const severityColor = currentIncident ? getSeverityColor(currentIncident.sevStatus) : '#10b981'
 
   return (
     <div className="incident-banner">
@@ -526,6 +380,8 @@ export function IncidentBanner({
           />
         </div>
 
+        {/* Left side: logo, counts, reso queue - fixed width, no grow */}
+        <div className="incident-banner-left">
         {/* Dashboard Logo */}
         <div className="dashboard-logo">
           <img
@@ -577,17 +433,18 @@ export function IncidentBanner({
               display: 'flex',
               flex: '1 1 0%',
               justifyContent: 'center',
-              alignItems: 'center'
+              alignItems: 'center',
+              minWidth: 0
             }}>
               <div className="zoom-call-section">
                 <div style={{ 
                   display: 'flex', 
                   flexDirection: 'column', 
                   alignItems: 'center', 
-                  gap: '8px' 
+                  gap: '4px' 
                 }}>
                   <div style={{ 
-                    fontSize: '14px', 
+                    fontSize: '11px', 
                     fontWeight: 600, 
                     color: 'var(--text-secondary)',
                     textTransform: 'uppercase',
@@ -602,24 +459,24 @@ export function IncidentBanner({
                     alignItems: 'flex-start', 
                     justifyContent: 'space-between',
                     width: '100%',
-                    maxWidth: '600px',
+                    maxWidth: '500px',
                     margin: '0 auto',
-                    gap: '32px'
+                    gap: '16px'
                   }}>
                   {unassignedCount !== undefined && (
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px',
+                      gap: '2px',
                       flex: '0 1 auto',
-                      minWidth: '120px'
+                      minWidth: '80px'
                     }}>
                         <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        padding: '8px 16px',
+                        padding: '4px 10px',
                         borderRadius: '999px',
                         backgroundColor: unassignedCount > 10 
                           ? 'rgba(253, 135, 137, 0.15)'
@@ -631,14 +488,14 @@ export function IncidentBanner({
                           : unassignedCount > 5
                           ? '#ffc107'
                           : '#4cec8c',
-                        fontSize: '42px',
+                        fontSize: '24px',
                         fontWeight: 700,
                         lineHeight: 1
                       }}>
                         {unassignedCount}
                         </span>
                         <div style={{
-                        fontSize: '13px',
+                        fontSize: '10px',
                         fontWeight: 500,
                         color: 'var(--text-secondary)',
                         textAlign: 'center',
@@ -655,12 +512,12 @@ export function IncidentBanner({
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px',
+                      gap: '2px',
                       flex: '0 1 auto',
-                      minWidth: '140px'
+                      minWidth: '80px'
                     }}>
                       <div style={{
-                        fontSize: '42px',
+                        fontSize: '24px',
                         fontWeight: 700,
                         lineHeight: 1,
                         color: availableCapacity > 0 ? '#10b981' : '#ef4444'
@@ -668,7 +525,7 @@ export function IncidentBanner({
                         {availableCapacity > 0 ? `+${availableCapacity}` : availableCapacity}
                       </div>
                       <div style={{
-                        fontSize: '13px',
+                        fontSize: '10px',
                         fontWeight: 500,
                         color: 'var(--text-secondary)',
                         textAlign: 'center',
@@ -676,8 +533,8 @@ export function IncidentBanner({
                         letterSpacing: '0.5px',
                         lineHeight: 1.3
                       }}>
-                        <div>Assignment</div>
-                        <div>Availability</div>
+                        <div>Open Chat</div>
+                        <div>Slots</div>
                       </div>
                     </div>
                   )}
@@ -686,12 +543,12 @@ export function IncidentBanner({
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px',
+                      gap: '2px',
                       flex: '0 1 auto',
-                      minWidth: '120px'
+                      minWidth: '80px'
                     }}>
                       <div style={{
-                        fontSize: '42px',
+                        fontSize: '24px',
                         fontWeight: 700,
                         lineHeight: 1,
                         color: 'var(--text-primary)'
@@ -699,7 +556,7 @@ export function IncidentBanner({
                         {formatResponseTime(medianResponseTime)}
                       </div>
                       <div style={{
-                        fontSize: '13px',
+                        fontSize: '10px',
                         fontWeight: 500,
                         color: 'var(--text-secondary)',
                         textAlign: 'center',
@@ -719,71 +576,114 @@ export function IncidentBanner({
           </>
         )}
 
-        {/* Incident Section - Right Aligned */}
+        </div>
+        {/* Incident & On-Call Section - Takes all remaining space */}
         <div className="incident-banner-incident-section-wrapper">
           <div className="incident-banner-incident-section">
-            {/* Incident Info */}
-          <div className="incident-banner-details">
-            {hasIncidents && currentIncident ? (
-              <>
-                <div className="incident-banner-header">
-                  <span
-                    className="incident-banner-severity"
-                    style={{ backgroundColor: severityColor }}
-                  >
-                    {currentIncident.sevStatus || 'ACTIVE INCIDENT'}
-                  </span>
-                  {activeIncidents.length > 1 && (
-                    <span className="incident-banner-counter">
-                      {currentIndex + 1} / {activeIncidents.length}
+            {/* Incident Status */}
+            <div className="incident-banner-details">
+              {incidents.length === 0 ? (
+                <div className="incident-banner-no-incidents">
+                  <div className="no-incidents-badge">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M8 0C3.58 0 0 3.58 0 8C0 12.42 3.58 16 8 16C12.42 16 16 12.42 16 8C16 3.58 12.42 0 8 0ZM7 11.4L3.6 8L5 6.6L7 8.6L11 4.6L12.4 6L7 11.4Z" fill="currentColor"/>
+                    </svg>
+                    <span>All Clear</span>
+                  </div>
+                  <div className="no-incidents-message">
+                    No SEV1 Incidents Reported Within The Last 72hrs
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                  {incidents.length > 1 && (
+                    <span style={{
+                      fontSize: '10px',
+                      color: 'var(--text-secondary)',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                    }}>
+                      {incidentIndex + 1}/{incidents.length}
                     </span>
                   )}
+                  {(() => {
+                    const inc = incidents[incidentIndex]
+                    if (!inc) return null
+                    const isSev1 = inc.severity?.toLowerCase().includes('sev1') || inc.severity?.toLowerCase().includes('sev 1') || inc.severity?.toLowerCase().includes('critical')
+                    return (
+                      <a
+                        href={inc.permalink || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          background: isSev1 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                          border: `1px solid ${isSev1 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s',
+                          flex: 1,
+                          minWidth: 0,
+                        }}
+                      >
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: isSev1 ? '#ef4444' : '#f59e0b',
+                          color: '#fff',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}>
+                          {inc.severity}
+                        </span>
+                        <span style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          flex: 1,
+                          minWidth: 0,
+                        }}>
+                          <div
+                            ref={incidentDescScrollRef}
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 500,
+                              overflowX: 'auto',
+                              overflowY: 'hidden',
+                              whiteSpace: 'nowrap',
+                              flex: 1,
+                              minWidth: 0,
+                            }}
+                            className="incident-desc-scroll"
+                          >
+                            <span style={{ display: 'inline-block' }}>{inc.name}</span>
+                          </div>
+                          <span style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: getStatusBadgeColor(inc.status, inc.statusCategory),
+                            color: '#fff',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}>
+                            {inc.status}
+                          </span>
+                        </span>
+                      </a>
+                    )
+                  })()}
                 </div>
-                <div className="incident-banner-title">{currentIncident.incidentDetails}</div>
-                <div className="incident-banner-meta">
-                  {currentIncident.incidentCreatedAt && (
-                    <span className="incident-meta-item">
-                      Created: {formatTimestamp(currentIncident.incidentCreatedAt)}
-                    </span>
-                  )}
-                  {currentIncident.incidentCreatedAt && currentIncident.incidentUpdatedAt && (
-                    <span className="incident-meta-separator">•</span>
-                  )}
-                  {currentIncident.incidentUpdatedAt && (
-                    <span className="incident-meta-item">
-                      Updated: {formatTimestamp(currentIncident.incidentUpdatedAt)}
-                    </span>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="incident-banner-no-incidents">
-                <div className="no-incidents-badge">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M8 0C3.58 0 0 3.58 0 8C0 12.42 3.58 16 8 16C12.42 16 16 12.42 16 8C16 3.58 12.42 0 8 0ZM7 11.4L3.6 8L5 6.6L7 8.6L11 4.6L12.4 6L7 11.4Z" fill="currentColor"/>
-                  </svg>
-                  <span>All Clear</span>
-                </div>
-                <div className="no-incidents-message">
-                  No SEV1 Incidents Reported Within The Last 72hrs
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Progress indicator for rotation */}
-          {hasIncidents && activeIncidents.length > 1 && (
-            <div className="incident-banner-progress">
-              {activeIncidents.map((_, index) => (
-                <div
-                  key={index}
-                  className={`incident-progress-dot ${
-                    index === currentIndex ? 'active' : ''
-                  }`}
-                />
-              ))}
+              )}
             </div>
-          )}
 
           {/* On-Call Display - Bottom of Incident Section */}
           {onCallData.length > 0 && (

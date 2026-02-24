@@ -102,18 +102,16 @@ export function OOOProfilePictures({
       </h3>
       <div className="ooo-profile-pictures-grid">
         {oooTSEs.map((tse) => (
-          <div key={tse.name} className="ooo-profile-picture-item">
+          <div key={tse.name} className="ooo-profile-picture-item" title={tse.name}>
             <img
               src={tse.avatar}
               alt={tse.name}
               className="ooo-profile-picture"
               onError={(e) => {
-                // Fallback to default avatar on error
                 const target = e.target as HTMLImageElement
                 target.src = `https://i.pravatar.cc/40?u=${tse.name}`
               }}
             />
-            <span className="ooo-profile-picture-name">{tse.name}</span>
           </div>
         ))}
       </div>
