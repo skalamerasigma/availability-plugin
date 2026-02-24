@@ -753,7 +753,9 @@ function resolveLeaderboard(
   rows.forEach((row) => {
     const resolvedName = idToInfo.get(row.tseName)?.name || idToInfo.get(row.tseId)?.name || row.tseName
     if (resolvedName.toLowerCase().includes('holly')) return
-    const key = resolvedName.toLowerCase()
+    const firstName = resolvedName.trim().split(' ')[0]
+    if (!firstName) return
+    const key = firstName.toLowerCase()
     const existing = byName.get(key)
     if (existing) {
       byName.set(key, {
@@ -761,6 +763,7 @@ function resolveLeaderboard(
         totalCoins: existing.totalCoins + row.totalCoins,
         coins5to10: existing.coins5to10 + row.coins5to10,
         coins10Plus: existing.coins10Plus + row.coins10Plus,
+        tseName: existing.tseName.length > resolvedName.length ? existing.tseName : resolvedName
       })
     } else {
       byName.set(key, { ...row, tseName: resolvedName })
@@ -769,10 +772,17 @@ function resolveLeaderboard(
   if (optimistic) {
     Object.entries(optimistic).forEach(([tseName, add]) => {
       if (tseName.toLowerCase().includes('holly')) return
-      const key = tseName.toLowerCase()
+      const firstName = tseName.trim().split(' ')[0]
+      if (!firstName) return
+      const key = firstName.toLowerCase()
       const existing = byName.get(key)
       if (existing) {
-        byName.set(key, { ...existing, totalCoins: existing.totalCoins + add.total, coins5to10: existing.coins5to10 + add.coins5to10, coins10Plus: existing.coins10Plus + add.coins10Plus })
+        byName.set(key, { 
+          ...existing, 
+          totalCoins: existing.totalCoins + add.total, 
+          coins5to10: existing.coins5to10 + add.coins5to10, 
+          coins10Plus: existing.coins10Plus + add.coins10Plus 
+        })
       } else {
         byName.set(key, { tseId: tseName.toLowerCase().replace(/\s+/g, '-'), tseName, totalCoins: add.total, coins5to10: add.coins5to10, coins10Plus: add.coins10Plus })
       }
@@ -3042,6 +3052,7 @@ export function AvailabilityPlugin() {
     closedOnly: true,
     autoRefresh: true,
     refreshInterval: 30000,
+    enabled: !intercomLoading, // Only fetch closed chats AFTER open/snoozed chats have loaded
   })
   
   // =================================================================

@@ -75,6 +75,8 @@ export interface UseIntercomDataOptions {
   autoRefresh?: boolean
   /** Enable debug mode for API */
   debug?: boolean
+  /** Whether to enable fetching. Default is true. */
+  enabled?: boolean
 }
 
 /**
@@ -91,6 +93,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
     refreshInterval = 120000, // 2 minutes default (matches queue-health-monitor)
     autoRefresh = true,
     debug = false,
+    enabled = true,
   } = options
 
   const [state, setState] = useState<IntercomDataState>({
@@ -102,6 +105,8 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
   })
 
   const fetchData = useCallback(async (showLoading = true) => {
+    if (!enabled) return;
+
     if (showLoading) {
       setState(prev => ({ ...prev, loading: true, error: null }))
     }
@@ -179,7 +184,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
         error: error instanceof Error ? error.message : 'Failed to fetch Intercom data',
       }))
     }
-  }, [skipClosed, closedOnly, debug])
+  }, [skipClosed, closedOnly, debug, enabled])
 
   // Initial fetch
   useEffect(() => {
