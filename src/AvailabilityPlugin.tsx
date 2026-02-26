@@ -108,12 +108,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return this.props.children
   }
 }
-// Legend import removed — legend no longer rendered
-import { FallbackGauge } from './components/FallbackGauge'
-import { OOOProfilePictures } from './components/OOOProfilePictures'
-import { OfficeHours } from './components/OfficeHours'
 import { TSEConversationTable } from './components/TSEConversationTable'
 import { IncidentBanner } from './components/IncidentBanner'
+import { IncidentPanel } from './components/IncidentPanel'
+import { InsightsCard } from './components/InsightsCard'
+import type { MetricsSnapshot } from './components/InsightsCard'
 import { DarkModeToggle } from './components/DarkModeToggle'
 import { AudioToggle } from './components/AudioToggle'
 import { useAgentDataFromApi } from './hooks/useAgentData'
@@ -343,6 +342,57 @@ client.config.configureEditorPanel([
     type: 'element',
   },
 
+  // === AI INSIGHTS: ENRICHED CONVERSATIONS FROM SNOWFLAKE ===
+  // Connect to SIGMA_ON_SIGMA.SIGMA_WRITABLE.INT_INTERCOM_CONVERSATIONS_ENRICHED
+  // Provides pre-analyzed conversation data for richer AI insights.
+  {
+    name: 'enrichedConversationsSource',
+    type: 'element',
+    label: 'Enriched conversations for AI insights (optional)',
+  },
+  {
+    name: 'enrichedMainQuestion',
+    type: 'column',
+    source: 'enrichedConversationsSource',
+    allowMultiple: false,
+    label: 'MAIN_QUESTION column',
+  },
+  {
+    name: 'enrichedProblemStatement',
+    type: 'column',
+    source: 'enrichedConversationsSource',
+    allowMultiple: false,
+    label: 'PROBLEM_STATEMENT column',
+  },
+  {
+    name: 'enrichedIssueClassification',
+    type: 'column',
+    source: 'enrichedConversationsSource',
+    allowMultiple: false,
+    label: 'ISSUE_CLASSIFICATION column',
+  },
+  {
+    name: 'enrichedFeatureGroup',
+    type: 'column',
+    source: 'enrichedConversationsSource',
+    allowMultiple: false,
+    label: 'FEATURE_GROUP column',
+  },
+  {
+    name: 'enrichedSentiment',
+    type: 'column',
+    source: 'enrichedConversationsSource',
+    allowMultiple: false,
+    label: 'CONVERSATION_SENTIMENT column',
+  },
+  {
+    name: 'enrichedComplexity',
+    type: 'column',
+    source: 'enrichedConversationsSource',
+    allowMultiple: false,
+    label: 'COMPLEXITY_SCORE column',
+  },
+
   // === CITY CONFIGURATION ===
   // Allow users to configure which cities/offices to display
   {
@@ -551,6 +601,8 @@ const MOCK_ASSIGNEE_BY_CONV: Record<string, { assignedTseId: string; assignedTse
   'mock-2010': { assignedTseId: 'ankita', assignedTseName: 'Ankita' },
 }
 
+const DEBUG_ASSIGNEE_NAMES = ['Nick', 'Julia', 'Ankita', 'Nathan S', 'Stephen', 'Amy', 'Sydney', 'Tanner']
+
 function getMockUnassignedConversations(nowSeconds: number): any[] {
   if (MOCK_SCENARIO === 1) {
     // SCENARIO 1: Simple demo - 3 bubbles with fly-away animation
@@ -600,6 +652,7 @@ interface ResoQueueBeltProps {
   unassignedConvs: any[]
   chatsTodayCount: number
   isAudioEnabled?: boolean
+  intercomTeamMembers?: Array<{ id: string | number; name: string; avatar?: { image_url?: string } }>
 }
 
 type CoinLeaderboardRow = {
@@ -909,17 +962,18 @@ function CoinPodiumCard({ intercomTeamMembers = [] }: CoinPodiumCardProps) {
 
   // --- Modal date-range fetch ---
 
-  const [modalCache, setModalCache] = useState<Record<string, { leaderboard: CoinLeaderboardRow[], totalAwarded: number }>>({})
+  const modalCacheRef = useRef<Record<string, { leaderboard: CoinLeaderboardRow[], totalAwarded: number }>>({})
 
   const fetchModalLeaderboard = useCallback(async (preset: DateRangePreset) => {
-    // If we have cached data for this preset, use it immediately to prevent loading flashes
-    const cached = modalCache[preset.label]
+    const cached = modalCacheRef.current[preset.label]
     if (cached) {
       setModalLeaderboard(cached.leaderboard)
       setModalTotalAwarded(cached.totalAwarded)
-    } else {
-      setModalLoading(true)
+      setModalLoading(false)
+      return
     }
+
+    setModalLoading(true)
 
     try {
       if (isLocalhost) {
@@ -938,12 +992,7 @@ function CoinPodiumCard({ intercomTeamMembers = [] }: CoinPodiumCardProps) {
       
       setModalLeaderboard(rows)
       setModalTotalAwarded(totalAwarded)
-      
-      // Update cache
-      setModalCache(prev => ({
-        ...prev,
-        [preset.label]: { leaderboard: rows, totalAwarded }
-      }))
+      modalCacheRef.current[preset.label] = { leaderboard: rows, totalAwarded }
     } catch (err) {
       console.warn('[CoinPodium] Modal fetch failed:', err)
       if (!cached) {
@@ -953,12 +1002,13 @@ function CoinPodiumCard({ intercomTeamMembers = [] }: CoinPodiumCardProps) {
     } finally {
       setModalLoading(false)
     }
-  }, [coinsLeaderboardEndpoint, getMockCoinLeaderboard, isLocalhost, modalCache])
+  }, [coinsLeaderboardEndpoint, getMockCoinLeaderboard, isLocalhost])
 
   const handleOpenModal = useCallback(() => {
     const todayPreset = dateRangePresets[0]
     setModalDateRange(todayPreset)
     setIsLeaderboardModalOpen(true)
+    modalCacheRef.current = {}
     fetchModalLeaderboard(todayPreset)
   }, [dateRangePresets, fetchModalLeaderboard])
 
@@ -1171,15 +1221,16 @@ function isConversationUnassigned(conversation: any): boolean {
   return !hasAssigneeId && !hasAssigneeObject
 }
 
-function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true }: ResoQueueBeltProps) {
+function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true, intercomTeamMembers = [] }: ResoQueueBeltProps) {
   const [conveyorBeltCurrentTime, setConveyorBeltCurrentTime] = useState(() => Date.now() / 1000)
   const [showBreachedModal, setShowBreachedModal] = useState(false)
   const [selectedConversation, setSelectedConversation] = useState<any | null>(null)
   const [explodingIds, setExplodingIds] = useState<Set<string>>(new Set())
   const [flyingAwayIds, setFlyingAwayIds] = useState<Set<string>>(new Set())
-  const [flyingAwayData, setFlyingAwayData] = useState<Map<string, { progress: number, staggerOffset: number, elapsedSeconds?: number }>>(new Map())
+  const [flyingAwayData, setFlyingAwayData] = useState<Map<string, { progress: number, staggerOffset: number, elapsedSeconds?: number, assigneeAvatar?: string, assigneeName?: string }>>(new Map())
   const confirmedBreachedIdsRef = useRef<Set<string>>(new Set())
   const removedIdsRef = useRef<Set<string>>(new Set())
+  const pendingFlyAwayRef = useRef<Set<string>>(new Set())
   const checkedIdsRef = useRef<Set<string>>(new Set())
   const checkingIdsRef = useRef<Set<string>>(new Set())
   const lastResetRef = useRef<number | null>(null)
@@ -1192,6 +1243,61 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
   const audioContextRef = useRef<AudioContext | null>(null)
   const assignmentStatusEndpoint = `${QHM_API_BASE_URL}/api/intercom/conversations/assignment-status`
   const coinsAwardEndpoint = `${QHM_API_BASE_URL}/api/intercom/coins/award`
+
+  const adminAvatarMap = useMemo(() => {
+    const map = new Map<string, { name: string; avatar: string }>()
+    intercomTeamMembers.forEach(m => {
+      const id = String(m.id)
+      const name = (m.name || '').trim()
+      const avatar = m.avatar?.image_url || ''
+      if (id && name) {
+        map.set(id, { name, avatar })
+        const staticMember = TEAM_MEMBERS.find(t => t.name.toLowerCase() === name.toLowerCase())
+        if (staticMember?.avatar && !avatar) {
+          map.set(id, { name, avatar: staticMember.avatar })
+        }
+      }
+    })
+    return map
+  }, [intercomTeamMembers])
+
+  const resolveAssigneeAvatar = useCallback(async (conversationId: string): Promise<{ name: string; avatar: string } | null> => {
+    try {
+      const response = await fetch(assignmentStatusEndpoint, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationIds: [conversationId] }),
+      })
+      if (!response.ok) return null
+      const payload = await response.json()
+      const results = Array.isArray(payload) ? payload : (payload.results || payload.conversations || [])
+      const result = results[0]
+      if (!result) return null
+
+      const adminId = String(result.admin_assignee_id || result.admin_assignee?.id || '')
+      if (!adminId) return null
+
+      const fromIntercom = adminAvatarMap.get(adminId)
+      if (fromIntercom?.avatar) return fromIntercom
+
+      const adminName = result.admin_assignee?.name || fromIntercom?.name || ''
+      if (adminName) {
+        const staticMember = TEAM_MEMBERS.find(t => t.name.toLowerCase() === adminName.toLowerCase())
+        if (staticMember?.avatar) return { name: adminName, avatar: staticMember.avatar }
+      }
+
+      const firstName = adminName.split(' ')[0]?.toLowerCase()
+      if (firstName) {
+        const byFirst = TEAM_MEMBERS.find(t => t.name.toLowerCase() === firstName || t.id === firstName)
+        if (byFirst?.avatar) return { name: byFirst.name, avatar: byFirst.avatar }
+      }
+
+      return fromIntercom || null
+    } catch {
+      return null
+    }
+  }, [assignmentStatusEndpoint, adminAvatarMap])
 
   const awardCoinEvents = useCallback(async (events: Array<{
     conversationId: string
@@ -1655,8 +1761,9 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     previousUnassignedIdsRef.current.forEach(prevId => {
       // Skip if still in current list
       if (currentIds.has(prevId)) return
-      // Skip if already flying away or exploding
+      // Skip if already flying away, pending avatar resolve, or exploding
       if (flyingAwayIds.has(prevId)) return
+      if (pendingFlyAwayRef.current.has(prevId)) return
       if (explodingIds.has(prevId)) return
       // Skip if it was breached (explosion handles this)
       if (confirmedBreachedIdsRef.current.has(prevId)) return
@@ -1694,27 +1801,48 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
       
       if (shouldTriggerFlyAway) {
         console.log('[Reso Queue] Conversation assigned, triggering fly-away:', prevId)
-        
-        playCoinSound()
 
-        // Store the position data for animation
-        setFlyingAwayData(prev => new Map(prev).set(prevId, savedData))
-        setFlyingAwayIds(prev => new Set(prev).add(prevId))
-        
-        // Remove after animation completes (3.5s total: 2s delay + 1.5s animation)
-        setTimeout(() => {
-          setFlyingAwayIds(prev => {
-            const next = new Set(prev)
-            next.delete(prevId)
-            return next
+        const mockAssignee = MOCK_ASSIGNEE_BY_CONV[prevId]
+        const isMock = !!mockAssignee || String(prevId).startsWith('mock-')
+
+        const startFlyAway = (avatar?: string, name?: string) => {
+          playCoinSound()
+          setFlyingAwayData(prev => new Map(prev).set(prevId, { ...savedData, assigneeAvatar: avatar, assigneeName: name }))
+          setFlyingAwayIds(prev => new Set(prev).add(prevId))
+
+          const cleanupDelay = avatar ? 4500 : 3500
+          setTimeout(() => {
+            setFlyingAwayIds(prev => {
+              const next = new Set(prev)
+              next.delete(prevId)
+              return next
+            })
+            setFlyingAwayData(prev => {
+              const next = new Map(prev)
+              next.delete(prevId)
+              return next
+            })
+            removedIdsRef.current.add(prevId)
+            pendingFlyAwayRef.current.delete(prevId)
+          }, cleanupDelay)
+        }
+
+        if (isMock) {
+          let assigneeAvatar: string | undefined
+          let assigneeName: string | undefined
+          if (mockAssignee) {
+            assigneeName = mockAssignee.assignedTseName
+            const member = TEAM_MEMBERS.find(m => m.name.toLowerCase() === assigneeName?.toLowerCase())
+            assigneeAvatar = member?.avatar
+          }
+          startFlyAway(assigneeAvatar, assigneeName)
+        } else {
+          pendingFlyAwayRef.current.add(prevId)
+          const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 3000))
+          Promise.race([resolveAssigneeAvatar(String(prevId)), timeout]).then(info => {
+            startFlyAway(info?.avatar, info?.name)
           })
-          setFlyingAwayData(prev => {
-            const next = new Map(prev)
-            next.delete(prevId)
-            return next
-          })
-          removedIdsRef.current.add(prevId)
-        }, 3500)
+        }
       }
     })
     
@@ -1754,7 +1882,8 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
     explodingIds,
     playNewBubbleSound,
     playCoinSound,
-    awardCoinEvents
+    awardCoinEvents,
+    resolveAssigneeAvatar
   ])
 
   const confirmedBreachedConvs = useMemo(() => {
@@ -1847,17 +1976,19 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
           }
 
           return (
-            <h3 style={{
-              margin: 0,
-              fontSize: '18px',
-              fontWeight: 600,
-              color: getWaitTimeColor(averageWaitTimeSeconds),
-              display: 'flex',
-              alignItems: 'center',
-              marginBottom: '16px'
-            }}>
-              Avg: {formatWaitTime(averageWaitTimeSeconds)}
-            </h3>
+            <>
+              <h3 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: 600,
+                color: getWaitTimeColor(averageWaitTimeSeconds),
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: '16px'
+              }}>
+                Avg: {formatWaitTime(averageWaitTimeSeconds)}
+              </h3>
+            </>
           )
         })()}
         
@@ -2124,11 +2255,11 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
             const data = flyingAwayData.get(convId)
             if (!data) return null
             
-            const { progress, staggerOffset } = data
+            const { progress, staggerOffset, assigneeAvatar } = data
             
-            // Always use coin GIF for all assigned chats
-            const flyAwayImageUrl = 'https://res.cloudinary.com/doznvxtja/image/upload/v1771896146/q-coin_spin_k0nqod.gif'
+            const coinGifUrl = 'https://res.cloudinary.com/doznvxtja/image/upload/v1771896146/q-coin_spin_k0nqod.gif'
             const flyAwaySize = '100px'
+            const hasAvatar = !!assigneeAvatar
             
             return (
               <div
@@ -2145,7 +2276,9 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
                   justifyContent: 'center',
                   zIndex: 300,
                   pointerEvents: 'none',
-                  animation: 'fly-away 1.5s ease-out 2s forwards'
+                  animation: hasAvatar
+                    ? 'fly-away 1.5s ease-out 3s forwards'
+                    : 'fly-away 1.5s ease-out 2s forwards'
                 }}
               >
                 {/* Trail particles */}
@@ -2155,7 +2288,7 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
                       key={i}
                       className="trail-particle"
                       style={{
-                        animationDelay: `${2 + i * 0.08}s`,
+                        animationDelay: `${(hasAvatar ? 3 : 2) + i * 0.08}s`,
                         opacity: 1 - (i * 0.2)
                       }}
                     />
@@ -2169,16 +2302,37 @@ function ResoQueueBelt({ unassignedConvs, chatsTodayCount, isAudioEnabled = true
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
+                  {/* Coin GIF - fades out after 1.2s when avatar is available */}
                   <img 
-                    src={flyAwayImageUrl}
+                    src={coinGifUrl}
                     alt="Assigned"
                     style={{
+                      position: 'absolute',
                       width: '100%',
                       height: '100%',
                       objectFit: 'contain',
-                      borderRadius: '50%'
+                      borderRadius: '50%',
+                      animation: hasAvatar ? 'assignee-coin-fade-out 0.4s ease-in 1.2s forwards' : undefined,
                     }}
                   />
+                  {/* Assignee profile pic - fades in after 1s (overlaps coin ending) */}
+                  {hasAvatar && (
+                    <img
+                      src={assigneeAvatar}
+                      alt="Assignee"
+                      style={{
+                        position: 'absolute',
+                        width: '90%',
+                        height: '90%',
+                        objectFit: 'cover',
+                        borderRadius: '50%',
+                        border: '3px solid #4cec8c',
+                        boxShadow: '0 0 16px rgba(76, 236, 140, 0.5)',
+                        opacity: 0,
+                        animation: 'assignee-avatar-fade-in 0.5s ease-out 1.0s forwards',
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             )
@@ -2678,11 +2832,11 @@ export function AvailabilityPlugin() {
   const scheduleElementId = config.scheduleSource as string
   const chatsPerHourElementId = config.chatsPerHourSource as string
   const oooElementId = config.oooSource as string
-  const officeHoursElementId = config.officeHoursSource as string
   const activeTSEsElementId = config.activeTSEsSource as string
   const awayTSEsElementId = config.awayTSEsSource as string
   const tseConversationElementId = config.tseConversationSource as string
-  
+  const enrichedConversationsElementId = config.enrichedConversationsSource as string
+
   // Debug: Log element IDs immediately after extraction
   console.log('🔍 [AvailabilityPlugin] Element IDs from config:')
   console.log('🔍   - activeTSEsElementId:', activeTSEsElementId, 'type:', typeof activeTSEsElementId, 'truthy:', !!activeTSEsElementId)
@@ -2707,7 +2861,6 @@ export function AvailabilityPlugin() {
   const chatsPerHourSigmaDataRaw = useElementData(chatsPerHourElementId)
   const chatsPerHourSigmaData = chatsPerHourElementId ? chatsPerHourSigmaDataRaw : undefined
   const oooData = useElementData(oooElementId)
-  const officeHoursData = useElementData(officeHoursElementId)
   
   const activeTSEsDataRaw = useElementData(activeTSEsElementId)
   const activeTSEsData = activeTSEsElementId ? activeTSEsDataRaw : undefined
@@ -2715,7 +2868,9 @@ export function AvailabilityPlugin() {
   const awayTSEsData = awayTSEsElementId ? awayTSEsDataRaw : undefined
   const tseConversationDataRaw = useElementData(tseConversationElementId)
   const tseConversationData = tseConversationElementId ? tseConversationDataRaw : undefined
-  
+  const enrichedConversationsDataRaw = useElementData(enrichedConversationsElementId)
+  const enrichedConversationsData = enrichedConversationsElementId ? enrichedConversationsDataRaw : undefined
+
   // Debug: Log what useElementData returns immediately
   console.log('🔍 [AvailabilityPlugin] useElementData results:')
   console.log('🔍   - activeTSEsData:', activeTSEsData, 'type:', typeof activeTSEsData, 'is null:', activeTSEsData === null, 'is undefined:', activeTSEsData === undefined)
@@ -2847,7 +3002,7 @@ export function AvailabilityPlugin() {
   const [effectRan, setEffectRan] = useState(false)
   
   // Track last refresh time
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+  const [, setLastUpdated] = useState<Date>(new Date())
   
   // Unassigned conversations state for conveyor belt
   const [unassignedConversationsData, setUnassignedConversationsData] = useState<any[]>([])
@@ -2861,6 +3016,8 @@ export function AvailabilityPlugin() {
   
   // Track "assigned" mock conversations for local testing of fly-away animation
   const [assignedMockIds, setAssignedMockIds] = useState<Set<string>>(new Set())
+
+  const debugMockIdCounter = useRef(5000)
   
   // Track assigned mock IDs in a ref to avoid dependency issues
   const assignedMockIdsRef = useRef<Set<string>>(new Set())
@@ -3273,19 +3430,18 @@ export function AvailabilityPlugin() {
       return 0
     }
 
-    // Helper to check if timestamp is today (UTC timezone)
     const isToday = (timestamp: number | undefined): boolean => {
       if (!timestamp) return false
       const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000
       const date = new Date(timestampMs)
       const now = new Date()
-      const utcFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'UTC',
+      const etFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit'
       })
-      return utcFormatter.format(now) === utcFormatter.format(date)
+      return etFormatter.format(now) === etFormatter.format(date)
     }
     
     // Match table behavior: count any conversation whose FIRST admin reply is today (UTC),
@@ -3717,23 +3873,7 @@ export function AvailabilityPlugin() {
     }
   }, [totalChatsTakenToday, historicalMetrics])
   
-  // Format timestamp for display
-  const formatLastUpdated = (date: Date): string => {
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    
-    if (diffMins < 1) return 'Just now'
-    if (diffMins === 1) return '1 min ago'
-    if (diffMins < 60) return `${diffMins} mins ago`
-    
-    // Format as time if more than an hour
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit',
-      hour12: true 
-    })
-  }
+
 
   // @ts-ignore
   const formatAgeSeconds = (seconds: number | null): string => {
@@ -4200,16 +4340,6 @@ export function AvailabilityPlugin() {
 
   // Transform Sigma data into agent data structure
   const agents: AgentData[] = useMemo(() => {
-    const avatarRefreshKey = intercomLastUpdated
-      ? Math.floor(intercomLastUpdated.getTime() / 30000)
-      : null
-
-    const withAvatarRefreshKey = (avatarUrl?: string) => {
-      if (!avatarUrl) return ''
-      if (avatarRefreshKey === null) return avatarUrl
-      const separator = avatarUrl.includes('?') ? '&' : '?'
-      return `${avatarUrl}${separator}v=${avatarRefreshKey}`
-    }
 
     // Priority 1: Use API data if apiUrl is configured and we have results
     if (apiUrl && apiAgents.length > 0) {
@@ -4668,7 +4798,7 @@ export function AvailabilityPlugin() {
                 }
               }
 
-              const freshIntercomAvatar = withAvatarRefreshKey(intercomTeamMember?.avatar?.image_url)
+              const freshIntercomAvatar = intercomTeamMember?.avatar?.image_url || ''
               
               // Only show agents who are scheduled for the current hour (have a valid hour block: Y, N, F, or L)
               // During off hours, don't show anyone, including OOO agents
@@ -4865,7 +4995,7 @@ export function AvailabilityPlugin() {
       ...agent,
       status: statusUpdates[agent.id] || agent.status,
     }))
-  }, [sigmaData, columns, scheduleColumns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData, directOooData, oooData, webhookAwayStatus, intercomTeamMembers, intercomLastUpdated])
+  }, [sigmaData, columns, scheduleColumns, scheduleData, config, cities, apiUrl, apiAgents, statusUpdates, currentPacificHour, directScheduleData, directSourceData, directOooData, oooData, webhookAwayStatus, intercomTeamMembers])
 
   // OOO agents state - will be populated from schedule data (hidden for now)
   const [_oooAgents, setOooAgents] = useState<{ name: string; avatar: string }[]>([])
@@ -4981,7 +5111,6 @@ export function AvailabilityPlugin() {
   // CAPACITY METRICS (TSEs @ Capacity and Available Capacity)
   // =================================================================
   const capacityMetrics = useMemo(() => {
-    // Create a map of TSE names (lowercase) to their open chat counts
     const tseOpenChatMap = new Map<string, number>()
     tseConversationDataForCapacity.forEach(tse => {
       const nameLower = tse.fullName.trim().toLowerCase()
@@ -4992,166 +5121,234 @@ export function AvailabilityPlugin() {
       }
     })
 
-    // Get list of active TSE names from schedule/status
-    const activeTSENames = new Set<string>()
-    const effectiveScheduleData = Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData
-    const scheduleTSECol = config.scheduleTSE as string
-    const scheduleOOOCol = config.scheduleOOO as string
-    
-    if (effectiveScheduleData && scheduleTSECol) {
-      const tseData = effectiveScheduleData[scheduleTSECol] as string[] | undefined
-      const oooData = scheduleOOOCol && effectiveScheduleData[scheduleOOOCol] 
-        ? effectiveScheduleData[scheduleOOOCol] as string[] | undefined 
-        : undefined
-      
-      // Build set of OOO TSEs
-      const oooSet = new Set<string>()
-      if (oooData) {
-        oooData.forEach((value, idx) => {
-          if (value && String(value).toLowerCase() === 'yes') {
-            const tseName = tseData?.[idx]?.trim().toLowerCase()
-            if (tseName) {
-              oooSet.add(tseName)
-              const firstName = tseName.split(' ')[0]
-              if (firstName !== tseName) {
-                oooSet.add(firstName)
-              }
-            }
-          }
-        })
-      }
-      
-      // Build agent status map
-      const agentStatusMap = new Map<string, 'away' | 'call' | 'lunch' | 'chat' | 'closing'>()
-      agentsByCity.forEach((agents) => {
-        agents.forEach(agent => {
-          if (agent.name) {
-            const cleanName = agent.name.trim().toLowerCase()
-            agentStatusMap.set(cleanName, agent.status)
-            const firstName = cleanName.split(' ')[0]
-            if (firstName !== cleanName) {
-              agentStatusMap.set(firstName, agent.status)
-            }
-          }
-        })
-      })
-      
-      // Get active city timezones
-      const nowUTC = (
-        currentTime.getUTCHours() +
-        currentTime.getUTCMinutes() / 60 +
-        currentTime.getUTCSeconds() / 3600
-      )
-      const activeCities = cities.filter(c => {
-        if (c.endHour > 24) {
-          const nextDayEndHour = c.endHour - 24
-          return nowUTC >= c.startHour || nowUTC < nextDayEndHour + 1
-        } else {
-          return nowUTC >= c.startHour && nowUTC < c.endHour + 1
-        }
-      })
-      const activeTimezones = new Set(activeCities.map(c => c.timezone))
-      
-      // Collect active TSE names (use full names to avoid duplicates)
-      if (tseData) {
-        tseData.forEach((name) => {
-          if (!name || !name.trim()) return
-          
-          const cleanName = name.trim()
-          const cleanNameLower = cleanName.toLowerCase()
-          const firstName = cleanNameLower.split(' ')[0]
-          
-          // Skip if OOO
-          if (oooSet.has(cleanNameLower) || oooSet.has(firstName)) {
-            return
-          }
-          
-          // Find team member to get timezone
-          const teamMember = TEAM_MEMBERS.find(m => 
-            m.name.toLowerCase() === cleanNameLower ||
-            m.name.toLowerCase() === firstName ||
-            cleanNameLower.startsWith(m.name.toLowerCase() + ' ') ||
-            m.name.toLowerCase().startsWith(firstName + ' ')
-          )
-          
-          // Only count if scheduled in an active city and not away
-          if (teamMember && activeTimezones.has(teamMember.timezone)) {
-            const agentStatus = agentStatusMap.get(cleanNameLower) || 
-                               agentStatusMap.get(firstName) ||
-                               null
-            
-            if (agentStatus !== 'away' && agentStatus !== null) {
-              // Use full name as primary key, but also store first name for matching
-              activeTSENames.add(cleanNameLower)
-            }
-          }
-        })
-      }
-    }
-
-    // Calculate capacity metrics
-    // Match active TSE names to their open chat counts
+    // Any visible agent whose status is not 'away' counts toward capacity.
     const processedTSEs = new Set<string>()
     let tseAtCapacityCount = 0
     let availableCapacity = 0
-    
-    activeTSENames.forEach(tseName => {
-      // Find matching TSE in conversation data (try full name first, then first name)
-      let openCount = tseOpenChatMap.get(tseName) || 0
-      let matchedTseName = tseName
-      
-      // If not found by full name, try first name
-      if (openCount === 0) {
-        const firstName = tseName.split(' ')[0]
-        openCount = tseOpenChatMap.get(firstName) || 0
-        if (openCount > 0) {
-          // Find the full name from the map
-          for (const [key, count] of tseOpenChatMap.entries()) {
-            if (key.toLowerCase().startsWith(firstName.toLowerCase() + ' ') || 
-                (key.toLowerCase() === firstName.toLowerCase() && count === openCount)) {
-              matchedTseName = key
-              break
-            }
+
+    agentsByCity.forEach((agents) => {
+      agents.forEach(agent => {
+        if (!agent.name || agent.status === 'away') return
+
+        const nameLower = agent.name.trim().toLowerCase()
+        const firstName = nameLower.split(' ')[0]
+        if (processedTSEs.has(firstName)) return
+        processedTSEs.add(firstName)
+
+        const openCount = tseOpenChatMap.get(nameLower) || tseOpenChatMap.get(firstName) || 0
+        const cap = getTSECapacity(agent.name)
+
+        if (openCount >= cap) tseAtCapacityCount++
+        availableCapacity += cap - openCount
+      })
+    })
+
+    return { tseOpenChatMap, tseAtCapacityCount, availableCapacity }
+  }, [tseConversationDataForCapacity, agentsByCity])
+
+  const insightsSnapshot = useMemo((): MetricsSnapshot => {
+    const totalUsed = tseConversationDataForCapacity.reduce((sum, t) => sum + t.openCount, 0)
+    const totalCap = capacityMetrics.availableCapacity + totalUsed
+
+    const allConvs = [...intercomConversations, ...intercomClosedTodayConversations]
+
+    const tagCounts = new Map<string, number>()
+    const attrMaps = new Map<string, Map<string, number>>()
+    const customerCounts = new Map<string, { name: string; count: number }>()
+    const titles: string[] = []
+
+    const interestingAttrs = ['Issue Type', 'Product Category', 'Product Area', 'Priority', 'Category', 'Subcategory', 'Type']
+
+    allConvs.forEach(conv => {
+      if (conv.tags) {
+        conv.tags.forEach(t => {
+          const name = typeof t === 'string' ? t : t?.name
+          if (name) tagCounts.set(name, (tagCounts.get(name) || 0) + 1)
+        })
+      }
+
+      if (conv.custom_attributes) {
+        interestingAttrs.forEach(attr => {
+          const val = conv.custom_attributes?.[attr]
+          if (val && typeof val === 'string' && val.trim()) {
+            if (!attrMaps.has(attr)) attrMaps.set(attr, new Map())
+            const m = attrMaps.get(attr)!
+            m.set(val, (m.get(val) || 0) + 1)
+          }
+        })
+      }
+
+      const email = conv.source?.author?.email
+      const name = conv.source?.author?.name || ''
+      if (email) {
+        const existing = customerCounts.get(email)
+        customerCounts.set(email, { name: name || existing?.name || '', count: (existing?.count || 0) + 1 })
+      }
+
+      const title = conv.source?.title
+      if (title && typeof title === 'string' && title.trim().length > 5) {
+        titles.push(title.trim())
+      }
+    })
+
+    const tagBreakdown = Array.from(tagCounts.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20)
+
+    const customAttributeBreakdown: Record<string, Array<{ value: string; count: number }>> = {}
+    attrMaps.forEach((valMap, attr) => {
+      customAttributeBreakdown[attr] = Array.from(valMap.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 15)
+    })
+
+    const repeatCustomers = Array.from(customerCounts.entries())
+      .filter(([_, v]) => v.count >= 2)
+      .map(([email, v]) => ({ email, name: v.name, count: v.count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15)
+
+    const sampleTitles = titles.slice(0, 50)
+
+    // Aggregate enriched conversation data from Sigma (INT_INTERCOM_CONVERSATIONS_ENRICHED) when connected
+    let enrichedAnalysis: {
+      mainQuestions?: string[]
+      problemStatements?: Array<{ value: string; count: number }>
+      featureGroups?: Array<{ value: string; count: number }>
+      issueClassification?: Array<{ value: string; count: number }>
+      sentimentStats?: { avg: number; positive: number; neutral: number; negative: number; total: number }
+      complexityStats?: { avg: number; high: number; medium: number; low: number; total: number }
+      highComplexityQuestions?: string[]
+    } | undefined = undefined
+
+    const mqCol = config.enrichedMainQuestion as string
+    const psCol = config.enrichedProblemStatement as string
+    const icCol = config.enrichedIssueClassification as string
+    const fgCol = config.enrichedFeatureGroup as string
+    const sentCol = config.enrichedSentiment as string
+    const cxCol = config.enrichedComplexity as string
+
+    if (enrichedConversationsData && mqCol && enrichedConversationsData[mqCol]) {
+      enrichedAnalysis = {}
+
+      const questions = (enrichedConversationsData[mqCol] as unknown[] || []).filter((v): v is string => typeof v === 'string' && v.trim().length > 10)
+      enrichedAnalysis.mainQuestions = questions.slice(0, 30)
+
+      const countValues = (colId: string) => {
+        const raw = enrichedConversationsData![colId] as unknown[] || []
+        const counts = new Map<string, number>()
+        raw.forEach(v => { if (typeof v === 'string' && v.trim()) counts.set(v, (counts.get(v) || 0) + 1) })
+        return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 15)
+      }
+
+      if (psCol && enrichedConversationsData[psCol]) enrichedAnalysis.problemStatements = countValues(psCol)
+      if (fgCol && enrichedConversationsData[fgCol]) enrichedAnalysis.featureGroups = countValues(fgCol)
+      if (icCol && enrichedConversationsData[icCol]) enrichedAnalysis.issueClassification = countValues(icCol)
+
+      if (sentCol && enrichedConversationsData[sentCol]) {
+        const sentiments = (enrichedConversationsData[sentCol] as unknown[] || []).filter((v): v is number => typeof v === 'number')
+        if (sentiments.length > 0) {
+          const avg = sentiments.reduce((s, v) => s + v, 0) / sentiments.length
+          enrichedAnalysis.sentimentStats = {
+            avg: Math.round(avg * 1000) / 1000,
+            positive: sentiments.filter(s => s > 0.1).length,
+            neutral: sentiments.filter(s => s >= -0.1 && s <= 0.1).length,
+            negative: sentiments.filter(s => s < -0.1).length,
+            total: sentiments.length,
           }
         }
       }
-      
-      // Skip if we've already processed this TSE (check by first name to avoid duplicates)
-      const firstName = tseName.split(' ')[0]
-      if (processedTSEs.has(firstName)) {
-        return
+
+      if (cxCol && enrichedConversationsData[cxCol]) {
+        const scores = (enrichedConversationsData[cxCol] as unknown[] || []).filter((v): v is number => typeof v === 'number')
+        if (scores.length > 0) {
+          const avg = scores.reduce((s, v) => s + v, 0) / scores.length
+          enrichedAnalysis.complexityStats = {
+            avg: Math.round(avg * 1000) / 1000,
+            high: scores.filter(s => s >= 0.5).length,
+            medium: scores.filter(s => s >= 0.25 && s < 0.5).length,
+            low: scores.filter(s => s < 0.25).length,
+            total: scores.length,
+          }
+          // Get questions for high-complexity conversations
+          const allQuestions = enrichedConversationsData[mqCol] as unknown[] || []
+          const allScores = enrichedConversationsData[cxCol] as unknown[] || []
+          const highCx: string[] = []
+          for (let i = 0; i < Math.min(allQuestions.length, allScores.length); i++) {
+            if (typeof allScores[i] === 'number' && (allScores[i] as number) >= 0.5 && typeof allQuestions[i] === 'string') {
+              highCx.push(allQuestions[i] as string)
+            }
+          }
+          enrichedAnalysis.highComplexityQuestions = highCx.slice(0, 10)
+        }
       }
-      processedTSEs.add(firstName)
-      
-      // Get this TSE's capacity limit (from exceptions or default)
-      // Try both the matched name and the original schedule name
-      const tseCapacityLimit = getTSECapacity(matchedTseName) || getTSECapacity(tseName)
-      
-      // Count TSEs at capacity (at or above their limit)
-      if (openCount >= tseCapacityLimit) {
-        tseAtCapacityCount++
-      }
-      
-      // Calculate available capacity: sum of (capacityLimit - openCount) for all active TSEs
-      // This can be negative if some TSEs are over capacity
-      const capacityDiff = tseCapacityLimit - openCount
-      availableCapacity += capacityDiff
-    })
+    }
+
+    // Fallback to conversation bodies from Intercom API data
+    let sampleBodies: string[] = []
+    if (!enrichedAnalysis) {
+      const bodies: string[] = []
+      allConvs.forEach(conv => {
+        const body = (conv as any).source?.body
+        if (body && typeof body === 'string') {
+          const stripped = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+          if (stripped.length > 10 && stripped.length < 500) {
+            bodies.push(stripped.slice(0, 300))
+          }
+        }
+      })
+      sampleBodies = bodies.slice(0, 30)
+    }
 
     return {
-      tseOpenChatMap,
-      tseAtCapacityCount,
-      availableCapacity
+      unassignedCount: unassignedConvs.length,
+      breachedCount: 0,
+      chatsToday: bannerChatsToday,
+      closedToday: bannerClosedToday,
+      yesterdayChats: historicalMetrics.yesterdayChats ?? undefined,
+      yesterdayClosed: historicalMetrics.yesterdayClosed ?? undefined,
+      activeTSEs: liveTseCounts.active,
+      awayTSEs: liveTseCounts.away,
+      totalCapacity: totalCap,
+      usedCapacity: totalUsed,
+      availableCapacity: capacityMetrics.availableCapacity,
+      capacityUtilization: totalCap > 0 ? Math.round((totalUsed / totalCap) * 100) : undefined,
+      tsesAtCapacity: capacityMetrics.tseAtCapacityCount,
+      chatsByHour: chatsPerHour,
+      medianResponseTime,
+      tagBreakdown,
+      customAttributeBreakdown,
+      repeatCustomers,
+      conversationTitles: sampleTitles,
+      conversationBodies: sampleBodies,
+      previousDayChatsByHour: previousDayChatsPerHour,
+      currentETHour: parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', hour12: false }).format(new Date()), 10),
+      enrichedAnalysis,
     }
   }, [
+    unassignedConvs.length,
+    bannerChatsToday,
+    bannerClosedToday,
+    historicalMetrics.yesterdayChats,
+    historicalMetrics.yesterdayClosed,
+    liveTseCounts.active,
+    liveTseCounts.away,
+    capacityMetrics,
     tseConversationDataForCapacity,
-    scheduleData,
-    directScheduleData,
-    config.scheduleTSE,
-    config.scheduleOOO,
-    agentsByCity,
-    cities,
-    currentTime
+    chatsPerHour,
+    medianResponseTime,
+    intercomConversations,
+    enrichedConversationsData,
+    config.enrichedMainQuestion,
+    config.enrichedProblemStatement,
+    config.enrichedIssueClassification,
+    config.enrichedFeatureGroup,
+    config.enrichedSentiment,
+    config.enrichedComplexity,
+    intercomClosedTodayConversations,
+    previousDayChatsPerHour,
   ])
 
   // Random status updates every 10 seconds (demo mode only)
@@ -5268,16 +5465,13 @@ export function AvailabilityPlugin() {
         chatsTrending={chatsTrending}
         previousClosed={historicalMetrics.yesterdayClosed}
         medianResponseTime={medianResponseTime}
-        teamMembers={intercomTeamMembers.length > 0 ? intercomTeamMembers : TEAM_MEMBERS.map(m => ({
-          id: m.id,
-          name: m.name,
-          email: undefined,
-          avatar: {
-            image_url: m.avatar
-          }
-        }))}
         unassignedCount={unassignedConvs.length}
         availableCapacity={capacityMetrics.availableCapacity}
+        activeTSEs={liveTseCounts.active}
+        awayTSEs={liveTseCounts.away}
+        oooData={Object.keys(directOooData).length > 0 ? directOooData : oooData}
+        oooTSEColumn={config.oooTSE as string | undefined}
+        oooStatusColumn={config.oooStatus as string | undefined}
       />
       <div className="main-content" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
         {/* Left sidebar with TSE Conversation Table */}
@@ -5310,29 +5504,61 @@ export function AvailabilityPlugin() {
         {/* Main content area */}
         <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
           <div className="timeline-section">
-            <div style={{ marginBottom: '4px', position: 'relative' }}>
-              <div style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                fontWeight: 500,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                gap: '2px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ opacity: 0.7 }}>Last updated:</span>
-                  <span style={{ fontWeight: 600 }}>{formatLastUpdated(lastUpdated)}</span>
-                </div>
+            <div style={{ marginBottom: '4px', position: 'relative' }} />
+            {typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <button
+                  onClick={() => {
+                    const id = `mock-dbg-${debugMockIdCounter.current++}`
+                    const nowSec = Date.now() / 1000
+                    const bubble = { id, created_at: nowSec, waiting_since: nowSec, admin_assignee_id: null, admin_assignee: null }
+                    if (!pendingMockBubblesRef.current) pendingMockBubblesRef.current = []
+                    pendingMockBubblesRef.current.push(bubble)
+                    setAddedMockBubbleIds(prev => new Set(prev).add(id))
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: '1px solid #4cec8c', background: 'rgba(76,236,140,0.15)', color: '#4cec8c', cursor: 'pointer' }}
+                >
+                  + New chat added
+                </button>
+                <button
+                  onClick={() => {
+                    const id = `mock-dbg-${debugMockIdCounter.current++}`
+                    const nowSec = Date.now() / 1000
+                    const elapsed = 270 + Math.floor(Math.random() * 120)
+                    const bubble = { id, created_at: nowSec - elapsed, waiting_since: nowSec - elapsed, admin_assignee_id: null, admin_assignee: null }
+                    if (!pendingMockBubblesRef.current) pendingMockBubblesRef.current = []
+                    pendingMockBubblesRef.current.push(bubble)
+                    setAddedMockBubbleIds(prev => new Set(prev).add(id))
+                    const name = DEBUG_ASSIGNEE_NAMES[Math.floor(Math.random() * DEBUG_ASSIGNEE_NAMES.length)]
+                    MOCK_ASSIGNEE_BY_CONV[id] = { assignedTseId: name.toLowerCase(), assignedTseName: name }
+                    setTimeout(() => {
+                      setAssignedMockIds(prev => new Set(prev).add(id))
+                    }, 3000)
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: '1px solid #ffc107', background: 'rgba(255,193,7,0.15)', color: '#ffc107', cursor: 'pointer' }}
+                >
+                  Chat assigned
+                </button>
+                <button
+                  onClick={() => {
+                    const id = `mock-dbg-${debugMockIdCounter.current++}`
+                    const nowSec = Date.now() / 1000
+                    const bubble = { id, created_at: nowSec - 595, waiting_since: nowSec - 595, admin_assignee_id: null, admin_assignee: null }
+                    if (!pendingMockBubblesRef.current) pendingMockBubblesRef.current = []
+                    pendingMockBubblesRef.current.push(bubble)
+                    setAddedMockBubbleIds(prev => new Set(prev).add(id))
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: '1px solid #fd8789', background: 'rgba(253,135,137,0.15)', color: '#fd8789', cursor: 'pointer' }}
+                >
+                  10 minute breach
+                </button>
               </div>
-            </div>
+            )}
             <ResoQueueBelt
               unassignedConvs={unassignedConvs}
               chatsTodayCount={bannerChatsToday}
               isAudioEnabled={isAudioEnabled}
+              intercomTeamMembers={intercomTeamMembers}
             />
 
             {(() => {
@@ -5378,7 +5604,6 @@ export function AvailabilityPlugin() {
               return (
                 <AvailableTSEsTable 
                   onCountsUpdate={(active, away) => {
-                    // Update state only if values changed to prevent loops
                     setLiveTseCounts(prev => {
                       if (prev.active === active && prev.away === away) return prev;
                       return { active, away };
@@ -5395,6 +5620,7 @@ export function AvailabilityPlugin() {
               chatsPerHour={chatsPerHour}
               previousDayChatsPerHour={previousDayChatsPerHour}
             />
+            <InsightsCard snapshot={insightsSnapshot} />
           </div>
         </div>
 
@@ -5410,47 +5636,9 @@ export function AvailabilityPlugin() {
           flexDirection: 'column',
           marginRight: '-20px'
         }}>
-          {/* TSE Status Counts */}
-          {(liveTseCounts.active !== undefined || liveTseCounts.away !== undefined) && (
-            <div className="tse-status-sidebar-counts">
-              {liveTseCounts.active !== undefined && (
-                <div className="tse-status-sidebar-stat">
-                  <div className="tse-status-sidebar-value tse-status-active">
-                    {liveTseCounts.active}
-                  </div>
-                  <div className="tse-status-sidebar-label">ACTIVE</div>
-                </div>
-              )}
-              {liveTseCounts.away !== undefined && (
-                <div className="tse-status-sidebar-stat">
-                  <div className="tse-status-sidebar-value tse-status-away">
-                    {liveTseCounts.away}
-                  </div>
-                  <div className="tse-status-sidebar-label">AWAY</div>
-                </div>
-              )}
-            </div>
-          )}
-          
-          {/* Combined container for Fallback Gauge, OOO, and Office Hours */}
+          {/* Incidents */}
           <div className="sidebar-components-container">
-            <OOOProfilePictures
-              oooData={Object.keys(directOooData).length > 0 ? directOooData : oooData}
-              oooTSEColumn={config.oooTSE as string | undefined}
-              oooStatusColumn={config.oooStatus as string | undefined}
-            />
-            <FallbackGauge
-              cities={cities}
-              agentsByCity={agentsByCity}
-              scheduleData={Object.keys(directScheduleData).length > 0 ? directScheduleData : scheduleData}
-              scheduleTSE={config.scheduleTSE as string | undefined}
-              scheduleOOO={config.scheduleOOO as string | undefined}
-            />
-            <OfficeHours
-              officeHoursData={officeHoursData}
-              tseTopicTimeColumn={config.officeHoursTseTopicTime as string | undefined}
-              statusColumn={config.officeHoursStatus as string | undefined}
-            />
+            <IncidentPanel intercomTeamMembers={intercomTeamMembers} />
           </div>
         </div>
       </div>
@@ -5486,17 +5674,13 @@ function AvailableTSEsTable({ onCountsUpdate }: { onCountsUpdate?: (active: numb
   const [awayReasons, setAwayReasons] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   
-  // Bring in the realtime webhook hook
   const { data: webhookData } = useWebhookAwayStatus(true)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const response = await fetch('/api/intercom/available-tses')
-        if (!response.ok) {
-          throw new Error('Failed to fetch available TSEs')
-        }
-        
+        if (!response.ok) throw new Error('Failed to fetch available TSEs')
         const data = await response.json()
         
         const reasonsMap = new Map<string, string>()
@@ -5505,13 +5689,11 @@ function AvailableTSEsTable({ onCountsUpdate }: { onCountsUpdate?: (active: numb
             reasonsMap.set(String(r.id), `${r.emoji || ''} ${r.label || ''}`.trim())
           })
         }
-        
         if (data.admins) {
           const teamAdmins = [...data.admins]
           teamAdmins.sort((a: any, b: any) => a.name.localeCompare(b.name))
           setAdmins(teamAdmins)
         }
-        
         setAwayReasons(reasonsMap)
       } catch (err) {
         console.warn('Failed to fetch TSEs', err)
@@ -5519,97 +5701,139 @@ function AvailableTSEsTable({ onCountsUpdate }: { onCountsUpdate?: (active: numb
         setLoading(false)
       }
     }
-    
     fetchData()
     const interval = setInterval(fetchData, 60000)
     return () => clearInterval(interval)
   }, [])
 
+  // Compute raw availability from both data sources (admin API + webhook)
+  const rawProcessed = useMemo(() => {
+    return admins.map(admin => {
+      const hookStatus = webhookData?.byId?.[admin.id]
+      let isAvailable = !admin.away_mode_enabled
+      let reasonText = admin.away_status_reason_id ? awayReasons.get(String(admin.away_status_reason_id)) : ''
+      let minsAway = admin.minutes_away
+      let source = 'api'
+
+      if (hookStatus) {
+        source = 'webhook'
+        const hookIsAvailable = hookStatus.status === 'Available'
+        if (hookIsAvailable) {
+          isAvailable = true
+          reasonText = ''
+          minsAway = null
+        } else {
+          isAvailable = false
+          if (hookStatus.status === 'Away' && admin.away_status_reason_id && reasonText) {
+            // keep reason from API
+          } else {
+            reasonText = hookStatus.status
+          }
+          const nowSeconds = Math.floor(Date.now() / 1000)
+          const hookSeconds = Math.floor(hookStatus.updatedAt / 1000)
+          minsAway = Math.max(0, Math.floor((nowSeconds - hookSeconds) / 60))
+        }
+      }
+
+      return { ...admin, calculatedAvailable: isAvailable, calculatedReason: reasonText, calculatedMinsAway: minsAway, _source: source }
+    })
+  }, [admins, webhookData, awayReasons])
+
+  // ── Final stabilisation: rolling-window majority vote ──
+  // Tracks the last WINDOW_SIZE raw availability values per admin.
+  // The displayed status is whichever value appears more often in the window.
+  // This handles alternating API responses (available, away, available, away...)
+  // where consecutive-agreement would never confirm either value.
+  const WINDOW_SIZE = 5
+  const historyRef = useRef<Map<string, boolean[]>>(new Map())
+  const stableStatusRef = useRef<Map<string, { available: boolean; reason: string; minsAway: number | null }>>(new Map())
+  const [stableProcessed, setStableProcessed] = useState(rawProcessed)
+
+  useEffect(() => {
+    const result = rawProcessed.map(admin => {
+      const id = String(admin.id)
+      const rawAvail = admin.calculatedAvailable as boolean
+
+      // Push to rolling window
+      const history = historyRef.current.get(id) || []
+      history.push(rawAvail)
+      if (history.length > WINDOW_SIZE) history.shift()
+      historyRef.current.set(id, history)
+
+      // Majority vote
+      const availCount = history.filter(v => v).length
+      const awayCount = history.length - availCount
+      const majorityAvailable = availCount >= awayCount
+
+      const prev = stableStatusRef.current.get(id)
+
+      if (!prev || prev.available !== majorityAvailable) {
+        const prevLabel = prev ? (prev.available ? 'Available' : 'Away') : 'none'
+        console.log(
+          `[TSE-Stable] ${admin.name} (${id}): ${prevLabel} → ${majorityAvailable ? 'Available' : 'Away'}` +
+          ` | window=[${history.map(v => v ? 'A' : 'W').join(',')}] avail=${availCount} away=${awayCount} src=${admin._source}`
+        )
+      }
+
+      stableStatusRef.current.set(id, {
+        available: majorityAvailable,
+        reason: majorityAvailable ? '' : admin.calculatedReason,
+        minsAway: majorityAvailable ? null : admin.calculatedMinsAway,
+      })
+
+      if (majorityAvailable === rawAvail) {
+        return { ...admin, calculatedAvailable: majorityAvailable }
+      }
+      // Override with majority vote
+      const stable = stableStatusRef.current.get(id)!
+      return {
+        ...admin,
+        calculatedAvailable: majorityAvailable,
+        calculatedReason: stable.reason,
+        calculatedMinsAway: stable.minsAway,
+      }
+    })
+
+    const prevKey = stableProcessed.map(a => `${a.id}:${a.calculatedAvailable}:${a.calculatedReason}`).join(',')
+    const nextKey = result.map(a => `${a.id}:${a.calculatedAvailable}:${a.calculatedReason}`).join(',')
+    if (prevKey !== nextKey) {
+      setStableProcessed(result)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawProcessed])
+
+  const processedAdmins = stableProcessed
+
   useEffect(() => {
     if (!loading && onCountsUpdate) {
-      // Re-calculate the visible away count to pass up to parent
-      // since we must call this hook before any early returns.
       const isExcluded = (name: string) => {
         if (!name) return false
         if (EXCLUDED_TSE_NAMES.includes(name)) return true
         const firstName = name.split(' ')[0]
         return EXCLUDED_TSE_NAMES.includes(firstName)
       }
-
       let activeCount = 0
       let awayCount = 0
-      
-      admins.forEach(admin => {
+      processedAdmins.forEach(admin => {
         if (isExcluded(admin.name)) return
-        
-        const hookStatus = webhookData?.byId?.[admin.id]
-        let isAvailable = !admin.away_mode_enabled
-        let reasonText = admin.away_status_reason_id ? awayReasons.get(String(admin.away_status_reason_id)) : ''
-
-        if (hookStatus) {
-          const hookIsAvailable = hookStatus.status === 'Available'
-          if (hookIsAvailable) {
-            isAvailable = true
-            reasonText = ''
-          } else {
-            isAvailable = false
-            if (hookStatus.status === 'Away' && admin.away_status_reason_id && reasonText) {
-              // Keep reasonText from API
-            } else {
-              reasonText = hookStatus.status
-            }
-          }
-        }
-
-        if (isAvailable) {
+        if (admin.calculatedAvailable) {
           activeCount++
         } else {
-          const { text } = extractEmojiAndText(reasonText || 'Away')
+          const { text } = extractEmojiAndText(admin.calculatedReason || 'Away')
           if (text !== 'Off Chat Hour' && text !== 'Done for the day' && text !== 'Out sick' && text !== 'Out of office') {
             awayCount++
           }
         }
       })
-      
       onCountsUpdate(activeCount, awayCount)
     }
-  }, [admins, webhookData, awayReasons, loading, onCountsUpdate])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processedAdmins, loading])
 
   if (loading) return <div style={{ padding: '20px', color: 'var(--text-muted)' }}>Loading available TSEs...</div>
 
-  // Process data
-  const processedAdmins = admins.map(admin => {
-    const hookStatus = webhookData?.byId?.[admin.id]
-    let isAvailable = !admin.away_mode_enabled
-    let reasonText = admin.away_status_reason_id ? awayReasons.get(String(admin.away_status_reason_id)) : ''
-    let minsAway = admin.minutes_away
-
-    if (hookStatus) {
-      const hookIsAvailable = hookStatus.status === 'Available'
-      if (hookIsAvailable) {
-        isAvailable = true
-        reasonText = ''
-        minsAway = null
-      } else {
-        isAvailable = false
-        // If webhook says generic "Away" but the API has a specific reason, prefer the API's specific reason.
-        if (hookStatus.status === 'Away' && admin.away_status_reason_id && reasonText) {
-          // Keep reasonText from API
-        } else {
-          reasonText = hookStatus.status
-        }
-        
-        const nowSeconds = Math.floor(Date.now() / 1000)
-        const hookSeconds = Math.floor(hookStatus.updatedAt / 1000)
-        minsAway = Math.max(0, Math.floor((nowSeconds - hookSeconds) / 60))
-      }
-    }
-
-    return { ...admin, calculatedAvailable: isAvailable, calculatedReason: reasonText, calculatedMinsAway: minsAway }
-  })
-
-  const availableAdmins = processedAdmins.filter(a => a.calculatedAvailable)
-  const awayAdmins = processedAdmins.filter(a => !a.calculatedAvailable)
+  const availableAdmins = processedAdmins.filter(a => a.calculatedAvailable).sort((a, b) => a.name.localeCompare(b.name))
+  const awayAdmins = processedAdmins.filter(a => !a.calculatedAvailable).sort((a, b) => a.name.localeCompare(b.name))
 
   // Filter out excluded TSEs
   const EXCLUDED_TSE_NAMES = [

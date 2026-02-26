@@ -113,8 +113,19 @@ app.use(express.json({ limit: '1mb' }))
 // -------------------------
 // API Routes
 // -------------------------
+// Cache the Intercom admin data for 2 minutes to prevent inconsistent
+// responses from the Intercom API causing status flickering.
+let _tseCacheData = null
+let _tseCacheExpiry = 0
+const TSE_CACHE_TTL_MS = 2 * 60 * 1000
+
 app.get('/api/intercom/available-tses', async (req, res) => {
   try {
+    const now = Date.now()
+    if (_tseCacheData && now < _tseCacheExpiry) {
+      return res.json(_tseCacheData)
+    }
+
     const apiKey = process.env.INTERCOM_API_KEY
     if (!apiKey) {
       return res.status(500).json({ error: 'INTERCOM_API_KEY is not configured on the server' })
@@ -126,20 +137,16 @@ app.get('/api/intercom/available-tses', async (req, res) => {
       'Intercom-Version': 'Unstable'
     }
 
-    // Fetch away reasons
     const reasonsRes = await fetch('https://api.intercom.io/away_status_reasons', { headers })
     if (!reasonsRes.ok) throw new Error(`Failed to fetch away reasons: ${reasonsRes.status}`)
     const reasonsData = await reasonsRes.json()
 
-    // Fetch team details to get admin IDs for team 5480079
     const teamRes = await fetch('https://api.intercom.io/teams/5480079', { headers })
     if (!teamRes.ok) throw new Error(`Failed to fetch team: ${teamRes.status}`)
     const teamData = await teamRes.json()
     
     const adminIds = teamData.admin_ids || []
     
-    // Fetch each admin individually to get the away_status_reason_id (not present in list API)
-    // We do this in chunks to avoid overwhelming the API or hitting rate limits
     const admins = []
     const chunkSize = 10
     
@@ -154,12 +161,11 @@ app.get('/api/intercom/available-tses', async (req, res) => {
       admins.push(...results.filter(Boolean))
     }
 
-    // Fetch recent activity logs to calculate "minutes away"
     const awayTimes = {}
     try {
       let page = 1
       const allLogs = []
-      while (page <= 5) { // Fetch up to 500 recent events
+      while (page <= 5) {
         const logRes = await fetch(`https://api.intercom.io/admins/activity_logs?per_page=100&page=${page}`, { headers })
         if (!logRes.ok) break
         const logData = await logRes.json()
@@ -168,7 +174,6 @@ app.get('/api/intercom/available-tses', async (req, res) => {
         page++
       }
       
-      // Process from oldest to newest
       allLogs.reverse().forEach(log => {
         if (log.activity_type === 'admin_away_mode_change') {
           const adminId = String(log.metadata?.update_by || log.performed_by?.id)
@@ -194,10 +199,16 @@ app.get('/api/intercom/available-tses', async (req, res) => {
       }
     })
 
-    res.json({
+    const payload = {
       admins: admins || [],
-      awayReasons: reasonsData.data || []
-    })
+      awayReasons: reasonsData.data || [],
+      cachedAt: new Date().toISOString(),
+    }
+
+    _tseCacheData = payload
+    _tseCacheExpiry = now + TSE_CACHE_TTL_MS
+
+    res.json(payload)
   } catch (err) {
     console.error('Error proxying Intercom API:', err)
     res.status(500).json({ error: 'Failed to fetch data from Intercom' })

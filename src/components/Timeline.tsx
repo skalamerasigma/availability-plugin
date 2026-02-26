@@ -418,7 +418,7 @@ export function Timeline({ cities: _cities, currentTime, simulateTime: _simulate
         return (
           <div style={{
             position: 'absolute',
-            bottom: '-12px',
+            top: '-14px',
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'flex',

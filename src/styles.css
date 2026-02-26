@@ -1102,8 +1102,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  padding-right: 100px; /* Reserve space for incident.io logo to prevent overlap */
+  padding: 8px 16px;
   position: relative;
   flex-wrap: nowrap;
   overflow: hidden;
@@ -1124,6 +1123,7 @@ body {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+  /* Legacy — layout now uses space-evenly in the content row */
 }
 
 .dashboard-logo {
@@ -1982,6 +1982,17 @@ body {
   }
 }
 
+@keyframes assignee-coin-fade-out {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.6); }
+}
+
+@keyframes assignee-avatar-fade-in {
+  0% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
 .bubble-flying-away {
   will-change: transform, opacity;
 }
@@ -2021,6 +2032,21 @@ body {
 .trail-particle:nth-child(3) { left: 15px; }
 .trail-particle:nth-child(4) { left: -8px; }
 .trail-particle:nth-child(5) { left: 8px; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .avatar-cluster-item {
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s;

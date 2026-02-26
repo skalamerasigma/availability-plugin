@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
+import { TEAM_MEMBERS } from '../data/teamMembers'
 
 interface TrendingData {
   direction: 'up' | 'down'
@@ -27,13 +28,9 @@ interface Incident {
   incidentLead?: string | null
 }
 
-interface TeamMember {
-  id: string | number
+interface OOOTSEBanner {
   name: string
-  email?: string
-  avatar?: {
-    image_url?: string
-  }
+  avatar: string
 }
 
 interface IncidentBannerProps {
@@ -42,13 +39,15 @@ interface IncidentBannerProps {
   chatsTrending?: TrendingData | null
   previousClosed?: number | null
   medianResponseTime?: number | null
-  teamMembers?: TeamMember[]
   unassignedCount?: number
   availableCapacity?: number
+  activeTSEs?: number
+  awayTSEs?: number
+  oooData?: Record<string, unknown> | null
+  oooTSEColumn?: string
+  oooStatusColumn?: string
 }
 
-const INCIDENT_IO_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769535474/Untitled_design_30_w9bwzy.svg'
-const INCIDENT_IO_LOGO_URL_DARK = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769843507/SQL_16_lighjh.svg'
 const DASHBOARD_LOGO_URL = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769680535/SQL_14_ielazn.svg'
 const DASHBOARD_LOGO_URL_DARK = 'https://res.cloudinary.com/doznvxtja/image/upload/v1769843414/SQL_15_upfjgr.svg'
 const QHM_API_BASE_URL = getQhmApiBaseUrl()
@@ -60,9 +59,13 @@ export function IncidentBanner({
   chatsTrending,
   previousClosed,
   medianResponseTime,
-  teamMembers = [],
   unassignedCount,
   availableCapacity,
+  activeTSEs,
+  awayTSEs,
+  oooData,
+  oooTSEColumn,
+  oooStatusColumn,
 }: IncidentBannerProps) {
   const [onCallData, setOnCallData] = useState<OnCallPerson[]>([])
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -71,7 +74,7 @@ export function IncidentBanner({
   const scrollIntervalRef = useRef<number | null>(null)
   const incidentDescScrollRef = useRef<HTMLDivElement>(null)
   const incidentAdvanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [isScrollingPaused, setIsScrollingPaused] = useState(false)
+  const [isScrollingPaused, _setIsScrollingPaused] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return document.documentElement.classList.contains('dark-mode')
   })
@@ -89,6 +92,36 @@ export function IncidentBanner({
     
     return () => observer.disconnect()
   }, [])
+
+  const oooTSEs = useMemo(() => {
+    if (!oooData || !oooTSEColumn) return []
+    const tseNames = oooData[oooTSEColumn] as string[] | undefined
+    const statuses = oooStatusColumn ? (oooData[oooStatusColumn] as string[] | undefined) : undefined
+    if (!tseNames || tseNames.length === 0) return []
+    const result: OOOTSEBanner[] = []
+    const seen = new Set<string>()
+    tseNames.forEach((name, i) => {
+      if (!name?.trim()) return
+      const clean = name.trim()
+      if (statuses) {
+        const s = statuses[i]?.toString().toLowerCase()
+        if (s !== 'yes' && s !== 'true' && s !== '1') return
+      }
+      const key = clean.toLowerCase()
+      if (seen.has(key)) return
+      seen.add(key)
+      const member = TEAM_MEMBERS.find((m) => {
+        const ml = m.name.toLowerCase()
+        const cl = clean.toLowerCase()
+        if (ml === cl) return true
+        if (ml === cl.split(' ')[0]) return true
+        if (cl.startsWith(ml + ' ') || ml.startsWith(cl + ' ')) return true
+        return false
+      })
+      result.push({ name: clean, avatar: member?.avatar || `https://i.pravatar.cc/40?u=${clean}` })
+    })
+    return result.sort((a, b) => a.name.localeCompare(b.name))
+  }, [oooData, oooTSEColumn, oooStatusColumn])
 
   // Fetch on-call data from Incident.io
   const fetchOnCallData = useCallback(async () => {
@@ -268,93 +301,6 @@ export function IncidentBanner({
     }
   }, [onCallData.length, isScrollingPaused])
 
-  // Get first name from full name
-  const getFirstName = (fullName: string): string => {
-    if (!fullName) return fullName
-    return fullName.split(' ')[0]
-  }
-
-  // Status badge background color (special badge style like SEV 1)
-  const getStatusBadgeColor = (status?: string, statusCategory?: string): string => {
-    const s = (status || '').toLowerCase()
-    const cat = (statusCategory || '').toLowerCase()
-    if (s.includes('progress') || cat === 'live') return '#3b82f6' // blue - In Progress
-    if (s.includes('triage') || cat === 'triage') return '#8b5cf6' // purple
-    if (s.includes('learning') || cat === 'learning') return '#06b6d4' // cyan
-    if (s.includes('closed') || cat === 'closed') return '#6b7280' // gray
-    if (s.includes('resolved')) return '#10b981' // green
-    if (s.includes('canceled') || s.includes('cancelled') || cat === 'canceled') return '#9ca3af' // light gray
-    if (s.includes('declined') || cat === 'declined') return '#ef4444' // red
-    return '#6366f1' // default indigo
-  }
-
-  // Map schedule name to badge label
-  const getBadgeLabel = (scheduleName: string): string => {
-    if (scheduleName === 'TSE Manager - Escalations') {
-      return 'ESCALATIONS'
-    }
-    if (scheduleName === 'TSE Manager - Incidents') {
-      return 'INCIDENTS'
-    }
-    if (scheduleName === '3 - Support On-Call Primary 24x7') {
-      return 'PRIMARY'
-    }
-    if (scheduleName === '4 - Support On-Call Backup 24x7') {
-      return 'BACKUP'
-    }
-    if (scheduleName === 'TSE - Tier 3') {
-      return 'TIER3'
-    }
-    // Fallback for any other schedules
-    return 'ON-CALL'
-  }
-
-  // Direct avatar overrides for on-call people with ambiguous first names
-  const ON_CALL_AVATAR_OVERRIDES: Record<string, string> = {
-    'Nathan Parrish': 'https://ca.slack-edge.com/E07M25LCK1V-U056CEX10HE-6c588ca5f698-512',
-  }
-
-  // Find team member by email or name to get avatar
-  const getTeamMemberAvatar = (person: OnCallPerson): string | undefined => {
-    // Check for direct avatar overrides first (for people with ambiguous first names)
-    const override = ON_CALL_AVATAR_OVERRIDES[person.name]
-    if (override) {
-      console.log(`[IncidentBanner] Using avatar override for ${person.name}:`, override)
-      return override
-    }
-
-    if (!teamMembers || teamMembers.length === 0) {
-      console.log('[IncidentBanner] No team members available for avatar lookup')
-      return undefined
-    }
-    
-    // Try to find by email first (most reliable)
-    if (person.email) {
-      const member = teamMembers.find(m => 
-        m.email && m.email.toLowerCase() === person.email?.toLowerCase()
-      )
-      if (member?.avatar?.image_url) {
-        console.log(`[IncidentBanner] Found avatar for ${person.name} by email:`, member.avatar.image_url)
-        return member.avatar.image_url
-      }
-    }
-    
-    // Fallback: try to find by name (first name match)
-    const firstName = getFirstName(person.name)
-    const member = teamMembers.find(m => {
-      const memberFirstName = getFirstName(m.name)
-      return memberFirstName.toLowerCase() === firstName.toLowerCase()
-    })
-    
-    if (member?.avatar?.image_url) {
-      console.log(`[IncidentBanner] Found avatar for ${person.name} by name:`, member.avatar.image_url)
-      return member.avatar.image_url
-    }
-    
-    console.log(`[IncidentBanner] No avatar found for ${person.name}. Available team members:`, teamMembers.map(m => ({ name: m.name, email: m.email, hasAvatar: !!m.avatar?.image_url })))
-    return undefined
-  }
-
   // Format response time in seconds to human-readable format
   const formatResponseTime = (seconds: number): string => {
     if (seconds < 60) {
@@ -369,379 +315,182 @@ export function IncidentBanner({
   }
 
 
+  const metricStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '2px',
+    flexShrink: 0,
+  }
+
+  const metricLabel: React.CSSProperties = {
+    fontSize: '10px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    whiteSpace: 'nowrap',
+    textAlign: 'center',
+  }
+
+  const metricValue: React.CSSProperties = {
+    fontSize: '26px',
+    fontWeight: 700,
+    lineHeight: 1,
+  }
+
   return (
     <div className="incident-banner">
-      <div className="incident-banner-content">
-        {/* Incident.io Logo - Top Right Corner */}
-        <div className="incident-banner-logo-icon">
-          <img
-            src={isDarkMode ? INCIDENT_IO_LOGO_URL_DARK : INCIDENT_IO_LOGO_URL}
-            alt="Incident.io"
-          />
-        </div>
-
-        {/* Left side: logo, counts, reso queue - fixed width, no grow */}
-        <div className="incident-banner-left">
-        {/* Dashboard Logo */}
-        <div className="dashboard-logo">
+      <div className="incident-banner-content" style={{ gap: 0 }}>
+        {/* Logo — fixed left */}
+        <div className="dashboard-logo" style={{ flexShrink: 0 }}>
           <img
             src={isDarkMode ? DASHBOARD_LOGO_URL_DARK : DASHBOARD_LOGO_URL}
             alt="Dashboard"
           />
         </div>
 
-        {/* Chat & Closed Counts */}
-        {(chatCount !== undefined || closedCount !== undefined) && (
-          <>
-            <div className="incident-banner-divider"></div>
-            <div className="tse-status-banner-counts">
-              {chatCount !== undefined && (
-                <div className="tse-status-banner-stat">
-                  <div className="tse-status-banner-value tse-status-chat">
-                    {chatCount}
-                  </div>
-                  <div className="tse-status-banner-label">Chats Today</div>
-                  {chatsTrending?.yesterdayValue !== undefined && (
-                    <div className="tse-status-banner-yesterday">
-                      {chatsTrending.yesterdayValue} prev day
-                    </div>
-                  )}
-                </div>
-              )}
-              {closedCount !== undefined && (
-                <div className="tse-status-banner-stat">
-                  <div className="tse-status-banner-value tse-status-closed">
-                    {closedCount}
-                  </div>
-                  <div className="tse-status-banner-label">Closed Today</div>
-                  {previousClosed !== undefined && previousClosed !== null && (
-                    <div className="tse-status-banner-yesterday">
-                      {previousClosed} prev day
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+        <div className="incident-banner-divider"></div>
 
-        {/* Reso Queue Container */}
-        {(unassignedCount !== undefined || availableCapacity !== undefined || (medianResponseTime !== undefined && medianResponseTime !== null)) && (
-          <>
-            <div className="incident-banner-divider"></div>
-            <div style={{
-              display: 'flex',
-              flex: '1 1 0%',
-              justifyContent: 'center',
-              alignItems: 'center',
-              minWidth: 0
-            }}>
-              <div className="zoom-call-section">
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'center', 
-                  gap: '4px' 
-                }}>
-                  <div style={{ 
-                    fontSize: '11px', 
-                    fontWeight: 600, 
-                    color: 'var(--text-secondary)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    Reso Queue
-                  </div>
-                  <div className="zoom-icon-container" style={{ 
-                    position: 'relative', 
-                    display: 'flex', 
-                    flexDirection: 'row',
-                    alignItems: 'flex-start', 
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    maxWidth: '500px',
-                    margin: '0 auto',
-                    gap: '16px'
-                  }}>
-                  {unassignedCount !== undefined && (
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '2px',
-                      flex: '0 1 auto',
-                      minWidth: '80px'
-                    }}>
-                        <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '4px 10px',
-                        borderRadius: '999px',
-                        backgroundColor: unassignedCount > 10 
-                          ? 'rgba(253, 135, 137, 0.15)'
-                          : unassignedCount > 5
-                          ? 'rgba(255, 193, 7, 0.2)'
-                          : 'rgba(76, 236, 140, 0.2)',
-                        color: unassignedCount > 10 
-                          ? '#fd8789'
-                          : unassignedCount > 5
-                          ? '#ffc107'
-                          : '#4cec8c',
-                        fontSize: '24px',
-                        fontWeight: 700,
-                        lineHeight: 1
-                      }}>
-                        {unassignedCount}
-                        </span>
-                        <div style={{
-                        fontSize: '10px',
-                        fontWeight: 500,
-                        color: 'var(--text-secondary)',
-                        textAlign: 'center',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        Chats Waiting
-                        </div>
-                      </div>
-                  )}
-                  {availableCapacity !== undefined && (
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '2px',
-                      flex: '0 1 auto',
-                      minWidth: '80px'
-                    }}>
-                      <div style={{
-                        fontSize: '24px',
-                        fontWeight: 700,
-                        lineHeight: 1,
-                        color: availableCapacity > 0 ? '#10b981' : '#ef4444'
-                      }}>
-                        {availableCapacity > 0 ? `+${availableCapacity}` : availableCapacity}
-                      </div>
-                      <div style={{
-                        fontSize: '10px',
-                        fontWeight: 500,
-                        color: 'var(--text-secondary)',
-                        textAlign: 'center',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        lineHeight: 1.3
-                      }}>
-                        <div>Open Chat</div>
-                        <div>Slots</div>
-                      </div>
-                    </div>
-                  )}
-                  {medianResponseTime !== undefined && medianResponseTime !== null && (
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '2px',
-                      flex: '0 1 auto',
-                      minWidth: '80px'
-                    }}>
-                      <div style={{
-                        fontSize: '24px',
-                        fontWeight: 700,
-                        lineHeight: 1,
-                        color: 'var(--text-primary)'
-                      }}>
-                        {formatResponseTime(medianResponseTime)}
-                      </div>
-                      <div style={{
-                        fontSize: '10px',
-                        fontWeight: 500,
-                        color: 'var(--text-secondary)',
-                        textAlign: 'center',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        Median Response
-                      </div>
-                    </div>
-                  )}
-                </div>
+        {/* Metrics — fill remaining space, evenly distributed */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-evenly',
+          minWidth: 0,
+        }}>
+          {/* Chats Today */}
+          {chatCount !== undefined && (
+            <div style={metricStyle}>
+              <div className="tse-status-banner-value tse-status-chat" style={metricValue}>
+                {chatCount}
               </div>
-            </div>
-            </div>
-            <div className="incident-banner-divider"></div>
-          </>
-        )}
-
-        </div>
-        {/* Incident & On-Call Section - Takes all remaining space */}
-        <div className="incident-banner-incident-section-wrapper">
-          <div className="incident-banner-incident-section">
-            {/* Incident Status */}
-            <div className="incident-banner-details">
-              {incidents.length === 0 ? (
-                <div className="incident-banner-no-incidents">
-                  <div className="no-incidents-badge">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M8 0C3.58 0 0 3.58 0 8C0 12.42 3.58 16 8 16C12.42 16 16 12.42 16 8C16 3.58 12.42 0 8 0ZM7 11.4L3.6 8L5 6.6L7 8.6L11 4.6L12.4 6L7 11.4Z" fill="currentColor"/>
-                    </svg>
-                    <span>All Clear</span>
-                  </div>
-                  <div className="no-incidents-message">
-                    No SEV1 Incidents Reported Within The Last 72hrs
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  {incidents.length > 1 && (
-                    <span style={{
-                      fontSize: '10px',
-                      color: 'var(--text-secondary)',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                    }}>
-                      {incidentIndex + 1}/{incidents.length}
-                    </span>
-                  )}
-                  {(() => {
-                    const inc = incidents[incidentIndex]
-                    if (!inc) return null
-                    const isSev1 = inc.severity?.toLowerCase().includes('sev1') || inc.severity?.toLowerCase().includes('sev 1') || inc.severity?.toLowerCase().includes('critical')
-                    return (
-                      <a
-                        href={inc.permalink || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '6px 10px',
-                          borderRadius: '6px',
-                          background: isSev1 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                          border: `1px solid ${isSev1 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
-                          textDecoration: 'none',
-                          color: 'inherit',
-                          cursor: 'pointer',
-                          transition: 'background 0.15s',
-                          flex: 1,
-                          minWidth: 0,
-                        }}
-                      >
-                        <span style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          background: isSev1 ? '#ef4444' : '#f59e0b',
-                          color: '#fff',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}>
-                          {inc.severity}
-                        </span>
-                        <span style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          flex: 1,
-                          minWidth: 0,
-                        }}>
-                          <div
-                            ref={incidentDescScrollRef}
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 500,
-                              overflowX: 'auto',
-                              overflowY: 'hidden',
-                              whiteSpace: 'nowrap',
-                              flex: 1,
-                              minWidth: 0,
-                            }}
-                            className="incident-desc-scroll"
-                          >
-                            <span style={{ display: 'inline-block' }}>{inc.name}</span>
-                          </div>
-                          <span style={{
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            background: getStatusBadgeColor(inc.status, inc.statusCategory),
-                            color: '#fff',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                          }}>
-                            {inc.status}
-                          </span>
-                        </span>
-                      </a>
-                    )
-                  })()}
+              <div style={metricLabel}>Chats Today</div>
+              {chatsTrending?.yesterdayValue !== undefined && (
+                <div style={{ fontSize: '9px', color: 'var(--text-secondary)', opacity: 0.7 }}>
+                  {chatsTrending.yesterdayValue} prev day
                 </div>
               )}
             </div>
+          )}
 
-          {/* On-Call Display - Bottom of Incident Section */}
-          {onCallData.length > 0 && (
-            <div className="on-call-section">
-              <div 
-                ref={onCallScrollRef}
-                className="on-call-people"
-                onMouseEnter={() => setIsScrollingPaused(true)}
-                onMouseLeave={() => setIsScrollingPaused(false)}
-              >
-                {/* Render items twice for seamless looping */}
-                {[...onCallData, ...onCallData].map((person, idx) => {
-                  const avatar = getTeamMemberAvatar(person)
-                  const badgeLabel = getBadgeLabel(person.scheduleName)
-                  return (
-                    <div key={idx} className="on-call-person">
-                      {avatar ? (
-                        <img 
-                          src={avatar} 
-                          alt={person.name}
-                          className="on-call-avatar"
-                          onError={(e) => {
-                            console.error(`[IncidentBanner] Failed to load avatar for ${person.name}:`, avatar)
-                            // Hide image on error
-                            e.currentTarget.style.display = 'none'
-                          }}
-                          onLoad={() => {
-                            console.log(`[IncidentBanner] Successfully loaded avatar for ${person.name}`)
-                          }}
-                        />
-                      ) : (
-                        <div className="on-call-avatar" style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '50%',
-                          backgroundColor: '#e5e7eb',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'var(--text-secondary)',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          flexShrink: 0
-                        }}>
-                          {getFirstName(person.name).charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="on-call-name">{getFirstName(person.name)}</span>
-                      <span className="on-call-type">
-                        {badgeLabel}
-                      </span>
-                    </div>
-                  )
-                })}
+          {/* Closed Today */}
+          {closedCount !== undefined && (
+            <div style={metricStyle}>
+              <div className="tse-status-banner-value tse-status-closed" style={metricValue}>
+                {closedCount}
+              </div>
+              <div style={metricLabel}>Closed Today</div>
+              {previousClosed !== undefined && previousClosed !== null && (
+                <div style={{ fontSize: '9px', color: 'var(--text-secondary)', opacity: 0.7 }}>
+                  {previousClosed} prev day
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Chats Waiting */}
+          {unassignedCount !== undefined && (
+            <div style={metricStyle}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4px 10px',
+                borderRadius: '999px',
+                backgroundColor: unassignedCount > 10 
+                  ? 'rgba(253, 135, 137, 0.15)'
+                  : unassignedCount > 5
+                  ? 'rgba(255, 193, 7, 0.2)'
+                  : 'rgba(76, 236, 140, 0.2)',
+                color: unassignedCount > 10 
+                  ? '#fd8789'
+                  : unassignedCount > 5
+                  ? '#ffc107'
+                  : '#4cec8c',
+                ...metricValue,
+              }}>
+                {unassignedCount}
+              </span>
+              <div style={metricLabel}>Chats Waiting</div>
+            </div>
+          )}
+
+          {/* Open Chat Slots */}
+          {availableCapacity !== undefined && (
+            <div style={metricStyle}>
+              <div style={{
+                ...metricValue,
+                color: availableCapacity > 0 ? '#10b981' : '#ef4444',
+              }}>
+                {availableCapacity > 0 ? `+${availableCapacity}` : availableCapacity}
+              </div>
+              <div style={{ ...metricLabel, lineHeight: 1.3 }}>
+                <div>Open Chat</div>
+                <div>Slots</div>
               </div>
             </div>
           )}
-          </div>
+
+          {/* Median Response */}
+          {medianResponseTime !== undefined && medianResponseTime !== null && (
+            <div style={metricStyle}>
+              <div style={{ ...metricValue, color: 'var(--text-primary)' }}>
+                {formatResponseTime(medianResponseTime)}
+              </div>
+              <div style={metricLabel}>Median Response</div>
+            </div>
+          )}
+
+          {/* Active TSEs */}
+          {activeTSEs !== undefined && (
+            <div style={metricStyle}>
+              <div style={{ ...metricValue, fontSize: '28px', fontWeight: 800, color: '#4cec8c' }}>
+                {activeTSEs}
+              </div>
+              <div style={metricLabel}>Active</div>
+            </div>
+          )}
+
+          {/* Away TSEs */}
+          {awayTSEs !== undefined && (
+            <div style={metricStyle}>
+              <div style={{ ...metricValue, fontSize: '28px', fontWeight: 800, color: '#fd8789' }}>
+                {awayTSEs}
+              </div>
+              <div style={metricLabel}>Away</div>
+            </div>
+          )}
+
+          {/* OOO Today */}
+          {oooTSEs.length > 0 && (
+            <div style={metricStyle}>
+              <div style={metricLabel}>OOO Today</div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {oooTSEs.map((tse, i) => (
+                  <img
+                    key={tse.name}
+                    src={tse.avatar}
+                    alt={tse.name}
+                    title={tse.name}
+                    style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '50%',
+                      objectFit: 'cover',
+                      border: '2px solid var(--bg-card, #fff)',
+                      marginLeft: i === 0 ? 0 : '-10px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+                    }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = `https://i.pravatar.cc/48?u=${tse.name}`
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

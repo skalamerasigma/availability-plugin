@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getQhmApiBaseUrl, isDebugEnabled } from '../config'
 
 // API base URL (queue-health-monitor). Configured at runtime via /config.js in Cloud Run.
@@ -64,6 +64,43 @@ export interface IntercomDataState {
 
 const AUTH_REQUIRED_ERROR = 'AUTH_REQUIRED'
 
+function buildMemberMap(members: IntercomTeamMember[]): Map<string, IntercomTeamMember> {
+  const map = new Map<string, IntercomTeamMember>()
+  for (const m of members) {
+    if (m.id != null) map.set(String(m.id), m)
+  }
+  return map
+}
+
+function membersDiffer(
+  prevMap: Map<string, IntercomTeamMember>,
+  nextMembers: IntercomTeamMember[],
+): boolean {
+  for (const m of nextMembers) {
+    const id = String(m.id)
+    const prev = prevMap.get(id)
+    if (!prev) return true
+    if (
+      prev.away_mode_enabled !== m.away_mode_enabled ||
+      prev.away_status_reason?.label !== m.away_status_reason?.label ||
+      prev.away_status_reason?.name !== m.away_status_reason?.name ||
+      prev.name !== m.name
+    ) return true
+  }
+  return false
+}
+
+function mergeTeamMembers(
+  prevMap: Map<string, IntercomTeamMember>,
+  next: IntercomTeamMember[],
+): IntercomTeamMember[] {
+  const merged = new Map(prevMap)
+  for (const m of next) {
+    if (m.id != null) merged.set(String(m.id), m)
+  }
+  return Array.from(merged.values())
+}
+
 export interface UseIntercomDataOptions {
   /** Whether to skip closed conversations in initial fetch (faster load) */
   skipClosed?: boolean
@@ -104,6 +141,9 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
     lastUpdated: null,
   })
 
+  const prevTeamMemberMapRef = useRef<Map<string, IntercomTeamMember>>(new Map())
+  const prevTeamMemberArrayRef = useRef<IntercomTeamMember[]>([])
+
   const fetchData = useCallback(async (showLoading = true) => {
     if (!enabled) return;
 
@@ -112,7 +152,6 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
     }
 
     try {
-      // Build API URL with query parameters
       const params = new URLSearchParams()
       if (skipClosed) params.append('skipClosed', 'true')
       if (closedOnly) params.append('closedOnly', 'true')
@@ -126,7 +165,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
 
       const response = await fetch(apiUrl, {
         method: 'GET',
-        credentials: 'include', // Important: include cookies for auth
+        credentials: 'include',
         headers: {
           'Accept': 'application/json',
         },
@@ -139,7 +178,7 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
         setState(prev => ({
           ...prev,
           conversations: [],
-          teamMembers: [],
+          teamMembers: prev.teamMembers,
           loading: false,
           error: AUTH_REQUIRED_ERROR,
         }))
@@ -153,25 +192,36 @@ export function useIntercomData(options: UseIntercomDataOptions = {}) {
 
       const data = await response.json()
       
-      // Handle both array format (legacy) and object format (current)
       const conversations: IntercomConversation[] = Array.isArray(data) 
         ? data 
         : (data.conversations || [])
-      const teamMembers: IntercomTeamMember[] = data.teamMembers || []
+      const nextTeamMembers: IntercomTeamMember[] = data.teamMembers || []
 
-      if (LOG) console.log(`[useIntercomData] Received ${conversations.length} conversations, ${teamMembers.length} team members`)
+      if (LOG) console.log(`[useIntercomData] Received ${conversations.length} conversations, ${nextTeamMembers.length} team members`)
       
-      // Log state breakdown
-      const stateCounts = conversations.reduce((acc, conv) => {
-        const convState = (conv.state || 'unknown').toLowerCase()
-        acc[convState] = (acc[convState] || 0) + 1
-        return acc
-      }, {} as Record<string, number>)
-      if (LOG) console.log('[useIntercomData] Conversation states:', stateCounts)
+      if (LOG) {
+        const stateCounts = conversations.reduce((acc, conv) => {
+          const convState = (conv.state || 'unknown').toLowerCase()
+          acc[convState] = (acc[convState] || 0) + 1
+          return acc
+        }, {} as Record<string, number>)
+        console.log('[useIntercomData] Conversation states:', stateCounts)
+      }
+
+      const changed = membersDiffer(prevTeamMemberMapRef.current, nextTeamMembers)
+      let stableTeamMembers: IntercomTeamMember[]
+      if (changed || prevTeamMemberArrayRef.current.length === 0) {
+        stableTeamMembers = mergeTeamMembers(prevTeamMemberMapRef.current, nextTeamMembers)
+        prevTeamMemberMapRef.current = buildMemberMap(stableTeamMembers)
+        prevTeamMemberArrayRef.current = stableTeamMembers
+        if (LOG) console.log('[useIntercomData] Team members changed — updating reference')
+      } else {
+        stableTeamMembers = prevTeamMemberArrayRef.current
+      }
 
       setState({
         conversations,
-        teamMembers,
+        teamMembers: stableTeamMembers,
         loading: false,
         error: null,
         lastUpdated: new Date(),

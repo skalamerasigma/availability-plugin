@@ -46,7 +46,8 @@ steps:
           --region "$$REGION" \
           --platform managed \
           --allow-unauthenticated \
-          --set-env-vars "^||^QHM_API_BASE_URL=$$QHM_URL||ALLOWED_ORIGIN=https://sigmacomputing.com,https://app.sigmacomputing.com,https://*.sigmacomputing.com"
+          --set-env-vars "^||^QHM_API_BASE_URL=$$QHM_URL||ALLOWED_ORIGIN=https://sigmacomputing.com,https://app.sigmacomputing.com,https://*.sigmacomputing.com" \
+          --set-secrets="INTERCOM_API_KEY=intercom-token:latest"
 
 images:
   - 'gcr.io/$PROJECT_ID/support-queue-live:$BUILD_ID'

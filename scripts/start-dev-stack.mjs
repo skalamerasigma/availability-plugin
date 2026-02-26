@@ -1,3 +1,8 @@
+// Example usage:
+//
+// export INTERCOM_API_KEY="your-token"
+// npm run dev:all
+
 import { spawn } from 'node:child_process'
 
 const requiredVars = ['INTERCOM_API_KEY']
@@ -86,3 +91,8 @@ process.on('SIGTERM', () => {
 console.log('[dev:all] Starting API on :8080 and Vite on :3000')
 startProcess('api', 'npm', ['run', 'api:local'])
 startProcess('vite', 'npm', ['run', 'dev'])
+
+// Example usage:
+//
+// export INTERCOM_API_KEY="your-token"
+// npm run dev:all
